@@ -1,0 +1,63 @@
+<html>
+  <head>
+    <title>Online Game Test</title>
+    <link rel="stylesheet" href="index.css"/>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  </head>
+  <body>
+    <div id="game-container">
+      <div id="game-stats">
+        <div id="auth-container" class="login-screen">
+          <button id="goto-signup-button">Registrar</button>
+          <button id="goto-login-button">Entrar</button>
+        </div>
+        <div id="login-container" class="hidden">
+          <label for="login-email">Email:</label>
+          <input type="text" name="login-email" id="login-email" maxlength="64"/>
+          <label for="login-password">Senha:</label>
+          <input type="password" name="login-password" id="login-password" maxlength="64"/>
+          <button id="login-button">Entrar</button>
+          <button id="login-cancel">Cancelar</button>
+        </div>
+        <div id="signup-container" class="hidden">
+          <label for="signup-email">Email:</label>
+          <input type="text" name="signup-email" id="signup-email" maxlength="64"/>
+          <label for="signup-email">Nome de Usuário:</label>
+          <input type="text" name="signup-username" id="signup-username" maxlength="64"/>
+          <label for="signup-password">Senha:</label>
+          <input type="password" name="signup-password" id="signup-password" maxlength="64"/>
+          <label for="signup-confirm-password">Confirme sua senha:</label>
+          <input type="password" name="signup-confirm-password" id="signup-confirm-password" maxlength="64"/>
+          <button id="signup-button">Registrar</button>
+          <button id="signup-cancel">Cancelar</button>
+        </div>
+        <div id="account-data" class="hidden">
+          <p>Logged in as</p>
+          <label for="channel-name">Sala:</label>
+          <input type="text" name="channel-name" id="channel-name" maxlength="8"/>
+          <button id="join-channel-button">Entrar</button>
+        </div>
+      </div>
+
+      <div>
+        <canvas id="game-canvas" width="320" height="240"></canvas>
+      </div>
+
+      <div id="chat">
+        <div id="chatlog">
+        </div>
+        <input type="text" id="message-box" maxlength="64"/>
+      </div>
+    </div>
+    
+
+    <div class="hidden">
+      <img id="tileset" src="/colored_tilemap_packed.png" width="128" height="80">
+      <img id="font" src="/font.png" width="128" height="128">
+    <div>
+
+    </body>
+  <script type="module" src="script.js"></script>
+</html>
+
