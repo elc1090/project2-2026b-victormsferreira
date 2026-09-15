@@ -66,3 +66,8 @@
 .hidden {
   display: none;
 }
+
+.player-nametag {
+  position: relative;
+  color: #fff;
+}

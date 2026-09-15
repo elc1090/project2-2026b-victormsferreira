@@ -7,6 +7,7 @@ const MAP_URL = "https://yduvtxtfzcgfeaehgisj.supabase.co/storage/v1/object/publ
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const gameCanvas = <HTMLCanvasElement>document.getElementById("game-canvas");
+const gameCanvasContainer = <HTMLDivElement>document.getElementById("game-canvas-container");
 const canvasCtx = gameCanvas.getContext("2d");
 const spritesheet = <HTMLImageElement>document.getElementById("tileset");
 const bmpFont = <HTMLImageElement>document.getElementById("font");
@@ -61,6 +62,12 @@ class Player {
   y : number;
   id : string;
   sprite: number;
+  nameTag: HTMLParagraphElement;
+  
+  onDelete() {
+    gameCanvasContainer.removeChild(this.nameTag);
+  }
+
   constructor(name : string, id : string) {
     this.name = name;
     this.x = 8;
@@ -68,6 +75,10 @@ class Player {
 
     this.id = id;
     this.sprite = 4;
+    this.nameTag = document.createElement("p");
+    this.nameTag.className = "player-nametag";
+    this.nameTag.innerText = name;
+    gameCanvasContainer.appendChild(this.nameTag);
   }
   setPosition(x: number, y : number) {
     this.x = x;
@@ -75,7 +86,10 @@ class Player {
   }
   draw() {
     drawSprite(this.sprite, this.x, this.y);
-    drawText(this.name, this.x, this.y + 8);
+    //drawText(this.name, this.x, this.y + 8);
+    let [tagX, tagY] = cam.transform(this.x, this.y + 8);
+    this.nameTag.style.top = (tagY * 3).toString();
+    this.nameTag.style.left = (tagX * 3).toString();
   }
 }
 
@@ -85,7 +99,7 @@ let actions : Record<string, string> = {
   ArrowLeft: "left",
   ArrowUp: "up",
   ArrowDown: "down",
-  ArrowRight: "right",
+  ArrowRight: "right",  
   KeyX: "shoot",
 }
 
@@ -212,8 +226,9 @@ function onKeyUp(key: KeyboardEvent) {
 
 
 function joinChannel(channelName: string) {
-  if (channel)
+  if (channel) {
     supabase.removeChannel(channel);
+  }
 
   userStatus.user = authUser.id,
   userStatus.name = userName,
@@ -307,6 +322,7 @@ exitChannelButton.addEventListener('click', (e) => {
 });
 
 function onPlayerMoved(msg: PlayerMovedData) {
+  console.log(msg);
   let dX = msg.mx * msg.mx;
   let dY = msg.my * msg.my;
   let d = dX + dY;
@@ -455,6 +471,6 @@ loginButton.addEventListener('click', (e) => {
 })
 
 window.addEventListener("unload", (e) => {
-  if (channel)
-    supabase.removeChannel(channel);
+  //if (channel)
+  //  supabase.removeChannel(channel);
 })

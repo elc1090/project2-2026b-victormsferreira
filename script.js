@@ -5,6 +5,7 @@ const SUPABASE_KEY = "sb_publishable_4CmRmdx13Sy1TXfMHwL1zQ_ngA7IN6n";
 const MAP_URL = "https://yduvtxtfzcgfeaehgisj.supabase.co/storage/v1/object/public/Assets/map.tmj";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const gameCanvas = document.getElementById("game-canvas");
+const gameCanvasContainer = document.getElementById("game-canvas-container");
 const canvasCtx = gameCanvas.getContext("2d");
 const spritesheet = document.getElementById("tileset");
 const bmpFont = document.getElementById("font");
@@ -59,6 +60,13 @@ class Player {
         this.y = 8;
         this.id = id;
         this.sprite = 4;
+        this.nameTag = document.createElement("p");
+        this.nameTag.className = "player-nametag";
+        this.nameTag.innerText = name;
+        gameCanvasContainer.appendChild(this.nameTag);
+    }
+    onDelete() {
+        gameCanvasContainer.removeChild(this.nameTag);
     }
     setPosition(x, y) {
         this.x = x;
@@ -66,7 +74,10 @@ class Player {
     }
     draw() {
         drawSprite(this.sprite, this.x, this.y);
-        drawText(this.name, this.x, this.y + 8);
+        //drawText(this.name, this.x, this.y + 8);
+        let [tagX, tagY] = cam.transform(this.x, this.y + 8);
+        this.nameTag.style.top = (tagY * 3).toString();
+        this.nameTag.style.left = (tagX * 3).toString();
     }
 }
 let players = {};
@@ -195,8 +206,9 @@ function onKeyUp(key) {
     }
 }
 function joinChannel(channelName) {
-    if (channel)
+    if (channel) {
         supabase.removeChannel(channel);
+    }
     userStatus.user = authUser.id,
         userStatus.name = userName,
         userStatus.x = Math.floor(Math.random() * 8) * 8,
@@ -279,6 +291,7 @@ exitChannelButton.addEventListener('click', (e) => {
         roomExitMenu.className = "hidden";
 });
 function onPlayerMoved(msg) {
+    console.log(msg);
     let dX = msg.mx * msg.mx;
     let dY = msg.my * msg.my;
     let d = dX + dY;
@@ -414,6 +427,6 @@ loginButton.addEventListener('click', (e) => {
     login(email, password);
 });
 window.addEventListener("unload", (e) => {
-    if (channel)
-        supabase.removeChannel(channel);
+    //if (channel)
+    //  supabase.removeChannel(channel);
 });
