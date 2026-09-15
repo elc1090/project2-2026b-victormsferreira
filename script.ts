@@ -177,6 +177,7 @@ function update() {
     cam.moveTo(selfPlayer.x, selfPlayer.y);
     userStatus.x = selfPlayer.x;
     userStatus.y = selfPlayer.y;
+    channel.track(userStatus)
   }
 
 }
