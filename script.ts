@@ -156,10 +156,10 @@ function drawTilemap(map: any) {
 function update() {
   let dx : number = 0;
   let dy : number = 0;
-  if (input.left.justPressed) dx -= 1.0;
-  if (input.right.justPressed) dx += 1.0;
-  if (input.up.justPressed) dy -= 1.0;
-  if (input.down.justPressed) dy += 1.0
+  if (input.left.pressed) dx -= 1.0;
+  if (input.right.pressed) dx += 1.0;
+  if (input.up.pressed) dy -= 1.0;
+  if (input.down.pressed) dy += 1.0
   if (dx != 0 || dy != 0) {
     let playerMoveMessage : Message = new Message;
     playerMoveMessage.type = MessageType.PLAYER_MOVED;
@@ -220,6 +220,9 @@ function onKeyUp(key: KeyboardEvent) {
 
 
 function joinChannel(channelName: string) {
+  if (channel)
+    supabase.removeChannel(channel);
+
   userStatus.user = authUser.id,
   userStatus.name = userName,
   userStatus.x = Math.floor(Math.random() * 8) * 8,
@@ -285,8 +288,16 @@ joinChannelButton.addEventListener('click', (e) => {
 });
 
 function onPlayerMoved(msg: PlayerMovedData) {
-  players[msg.playerID].x += msg.mx * 8;
-  players[msg.playerID].y += msg.my * 8;
+  let dX = msg.mx * msg.mx;
+  let dY = msg.my * msg.my;
+  let d = dX + dY;
+  if (d > 0) {
+    d = Math.sqrt(d);
+    msg.mx /= d;
+    msg.my /= d;
+  }
+  players[msg.playerID].x += msg.mx;
+  players[msg.playerID].y += msg.my;
 }
 
 function newChatMessage(msg: string) {
@@ -424,12 +435,7 @@ loginButton.addEventListener('click', (e) => {
   login(email, password);
 })
 
-
-
-
-//const signUpButton = <HTMLButtonElement>document.getElementById("signup-button");
-//const usernameField = <HTMLInputElement>document.getElementById("username");
-//const passwordField = <HTMLInputElement>document.getElementById("password");
-//signUpButton.addEventListener('click', (e) => {
-//  signUp(usernameField.value, passwordField.value);
-//});
+window.addEventListener("unload", (e) => {
+  if (channel)
+    supabase.removeChannel(channel);
+})
