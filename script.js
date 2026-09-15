@@ -91,7 +91,7 @@ class Player {
         drawSprite(this.sprite, this.x, this.y);
         //drawText(this.name, this.x, this.y + 8);
         let [tagX, tagY] = cam.transform(this.x, this.y + 8);
-        let bounding = gameCanvasContainer.getBoundingClientRect();
+        let bounding = gameCanvas.getBoundingClientRect();
         this.nameTag.style.top = (tagY * 3 + bounding.top).toString();
         this.nameTag.style.left = (tagX * 3 + bounding.left).toString();
         if (this.chatTimer > 0.0) {
@@ -178,17 +178,15 @@ function update() {
     if (input.down.pressed)
         dy += 1.0;
     let selfPlayer = players[authUser.id];
-    if (dx != 0 || dy != 0) {
-        let playerMoveMessage = new Message;
-        playerMoveMessage.type = MessageType.PLAYER_MOVED;
-        playerMoveMessage.data = new PlayerMovedData;
-        selfPlayer.x += dx;
-        selfPlayer.y += dy;
-        playerMoveMessage.data.mx = selfPlayer.x;
-        playerMoveMessage.data.my = selfPlayer.y;
-        playerMoveMessage.data.playerID = authUser["id"];
-        broadcastMessage(playerMoveMessage);
-    }
+    let playerMoveMessage = new Message;
+    playerMoveMessage.type = MessageType.PLAYER_MOVED;
+    playerMoveMessage.data = new PlayerMovedData;
+    selfPlayer.x += dx;
+    selfPlayer.y += dy;
+    playerMoveMessage.data.mx = selfPlayer.x;
+    playerMoveMessage.data.my = selfPlayer.y;
+    playerMoveMessage.data.playerID = authUser["id"];
+    broadcastMessage(playerMoveMessage);
     for (let i in input) {
         input[i].justPressed = false;
     }
@@ -197,7 +195,10 @@ function update() {
     }
 }
 function drawLoop() {
-    canvasCtx === null || canvasCtx === void 0 ? void 0 : canvasCtx.clearRect(0, 0, 320, 240);
+    if (!canvasCtx)
+        return;
+    canvasCtx.fillStyle = "rgb(0 0 0)";
+    canvasCtx.fillRect(0, 0, 320, 240);
     if (!channel)
         return;
     update();
@@ -279,6 +280,7 @@ function joinChannel(channelName) {
     channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
         for (let presence of leftPresences) {
             console.log(presence);
+            players[presence.user].onDelete();
             delete players[presence.user];
             chatNotify("Usuário " + presence.name + " saiu da sala");
         }

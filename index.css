@@ -1,9 +1,50 @@
+:root {
+  --black:#000000;
+  --darkgray:#7e7e7e;
+  --lightgray:#bebebe;
+  --white:#ffffff;
+  --darkred:#7e0000;
+  --red:#fe0000;
+  --darkgreen:#047e00;
+  --green:#06ff04;
+  --darkyellow:#7e7e00;
+  --yellow:#ffff04;
+  --darkblue:#00007e;
+  --blue:#0000ff;
+  --darkpurple:#7e007e;
+  --purple:#fe00ff;
+  --darkcyan:#047e7e;
+  --cyan:#06ffff;
+}
+
 body {
   font-family: "VT323", monospace;
+  background: var(--darkcyan);
+}
+
+button {
+  font-family: "VT323", monospace;
+  background: var(--lightgray);
+  border-left: thick solid var(--white);
+  border-top: thick solid var(--white);
+  border-right: thick solid var(--darkgray);
+  border-bottom: thick solid var(--darkgray);
+}
+
+button:hover {
+  background: var(--white);
+}
+
+button:active {
+  background: var(--darkgray);
 }
 
 #game-stats {
-  border: 1px solid black;
+  background: var(--lightgray);
+  border-left: thick solid var(--white);
+  border-top: thick solid var(--white);
+  border-right: thick solid var(--darkgray);
+  border-bottom: thick solid var(--darkgray);
   width: auto;
   min-width: 20%;
   height: 100%;
@@ -21,9 +62,17 @@ body {
   padding-right: 5%;
   gap: 1%;
 }
-
+#game-canvas-container {
+  display: flex;
+  flex-flow: column wrap;
+  gap: 0 0;
+  overflow: hidden;
+}
 #game-canvas {
-  border: 1px solid black;
+  border-left: thick solid var(--white);
+  border-top: thick solid var(--white);
+  border-right: thick solid var(--darkgray);
+  border-bottom: thick solid var(--darkgray);
   width: 960px;
   height: 720px;
   image-rendering: crisp-edges;
@@ -42,23 +91,26 @@ body {
   padding: 4px;
   width: 100%;
   height: 95%;
-  gap: 20px;
+  gap: 2%;
   border-radius: 5px;
 }
 
 
 #chat {
-  min-width: 20%;
-  width: auto;
+  background: var(--lightgray);
+  border-left: thick solid var(--white);
+  border-top: thick solid var(--white);
+  border-right: thick solid var(--darkgray);
+  border-bottom: thick solid var(--darkgray);
+  width: 20%;
   height: 100%;
-  border: 1px solid black;
   display: flex;
   flex-direction: column;
   padding: 8px;
   gap: 8px;
 }
 #chatlog {
-  height: 95%;
+  height: 100%;
   border: 1px solid black;
   overflow: hidden auto;
   scrollbar-gutter: stable;
@@ -82,11 +134,21 @@ body {
 
 .chat-bubble {
   position: absolute;
-  background:  rgb(255 255 255 / 50%);
-  border: 1px solid #fff ;
+  background:  var(--darkyellow);
+  border: 1px solid var(--black);
   border-radius: 4px 4px 4px 0px;
 }
 
 .room-notification {
-  color: yellow;
+  color: var(--yellow);
+}
+
+.titlebar {
+  color: var(--white);
+  padding: 4px;
+  background-color: var(--darkblue);
+  border-left: thick solid var(--white);
+  border-top: thick solid var(--white);
+  border-right: thick solid var(--white);
+  margin: 0;
 }
