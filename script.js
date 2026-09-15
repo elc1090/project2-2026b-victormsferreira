@@ -138,13 +138,13 @@ function drawTilemap(map) {
 function update() {
     let dx = 0;
     let dy = 0;
-    if (input.left.justPressed)
+    if (input.left.pressed)
         dx -= 1.0;
-    if (input.right.justPressed)
+    if (input.right.pressed)
         dx += 1.0;
-    if (input.up.justPressed)
+    if (input.up.pressed)
         dy -= 1.0;
-    if (input.down.justPressed)
+    if (input.down.pressed)
         dy += 1.0;
     if (dx != 0 || dy != 0) {
         let playerMoveMessage = new Message;
@@ -200,6 +200,8 @@ function onKeyUp(key) {
     }
 }
 function joinChannel(channelName) {
+    if (channel)
+        supabase.removeChannel(channel);
     userStatus.user = authUser.id,
         userStatus.name = userName,
         userStatus.x = Math.floor(Math.random() * 8) * 8,
@@ -254,8 +256,16 @@ joinChannelButton.addEventListener('click', (e) => {
     }
 });
 function onPlayerMoved(msg) {
-    players[msg.playerID].x += msg.mx * 8;
-    players[msg.playerID].y += msg.my * 8;
+    let dX = msg.mx * msg.mx;
+    let dY = msg.my * msg.my;
+    let d = dX + dY;
+    if (d > 0) {
+        d = Math.sqrt(d);
+        msg.mx /= d;
+        msg.my /= d;
+    }
+    players[msg.playerID].x += msg.mx;
+    players[msg.playerID].y += msg.my;
 }
 function newChatMessage(msg) {
     let p = document.createElement("p");
@@ -380,9 +390,7 @@ loginButton.addEventListener('click', (e) => {
     const password = document.getElementById("login-password").value;
     login(email, password);
 });
-//const signUpButton = <HTMLButtonElement>document.getElementById("signup-button");
-//const usernameField = <HTMLInputElement>document.getElementById("username");
-//const passwordField = <HTMLInputElement>document.getElementById("password");
-//signUpButton.addEventListener('click', (e) => {
-//  signUp(usernameField.value, passwordField.value);
-//});
+window.addEventListener("unload", (e) => {
+    if (channel)
+        supabase.removeChannel(channel);
+});
