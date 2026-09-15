@@ -13,7 +13,7 @@ const spritesheet = <HTMLImageElement>document.getElementById("tileset");
 
 const messageBox = <HTMLInputElement>document.getElementById("message-box");
 const chatLog = <HTMLDivElement>document.getElementById("chatlog");
-
+const DT = 1.0 / 60.0;
 
 let authUser = supabase.auth.getUser().data;
 let userName : string = "";
@@ -41,21 +41,42 @@ class Entity {
   y: number;
   dirX: number = 1;
   dirY: number = 0;
-  speed: number = 1;
+  speed: number = 0;
   sprite: number;
   constructor(sprite: number, x: number, y: number) {
     this.x = x;
     this.y = y;
     this.sprite = sprite;
   }
+  delete() {
+    const ind = entities.indexOf(this);
+    if (ind >= 0)
+      entities.splice(ind, 1);
+    this.onDelete();
+  }
+  onDelete() {
+  }
   update() {
     this.x += this.dirX * this.speed;
     this.y += this.dirY * this.speed;
+    this.checkForMapCollision();
+  }
+  checkForMapCollision() {
+    let x = this.x + 4;
+    let y = this.y + 6;
+    if (x < 0 || y < 0 || x > tilemap.layers[0].width *8 || y > tilemap.layers[0].height * 8) {
+      this.onCollideWithMap(this.x, this.y, -1);
+    }
   }
   draw() {
     drawSprite(this.sprite, this.x, this.y);
   }
+  onCollideWithEntity(other: Entity) {
 
+  } 
+  onCollideWithMap(x: number, y: number, tile: number) {
+    
+  }
 }
 
 class Player extends Entity {
@@ -68,6 +89,8 @@ class Player extends Entity {
   
   onDelete() {
     gameCanvasContainer.removeChild(this.nameTag);
+    gameCanvasContainer.removeChild(this.chatBubble);
+    delete players[this.id];
   }
 
   constructor(name : string, id : string) {
@@ -113,6 +136,13 @@ class Player extends Entity {
       playerMoveMessage.data.my = this.y;
       playerMoveMessage.data.playerID = authUser["id"];
       broadcastMessage(playerMoveMessage);
+      if (input.shoot.justPressed) {
+        entities.push(new Bullet(this.id, this.x, this.y, this.dirX, this.dirY));
+        let shootMessage = new Message;
+        shootMessage.type = MessageType.PLAYER_SHOT;
+        shootMessage.data = new PlayerShotData(this.id, this.x, this.y, this.dirX, this.dirY);
+        broadcastMessage(shootMessage);
+      }
       cam.moveTo(this.x, this.y);
     }
     super.update();
@@ -127,7 +157,7 @@ class Player extends Entity {
       [tagX, tagY] = cam.transform(this.x+6, this.y - 10);
       this.chatBubble.style.top = (tagY * 3 + bounding.top).toString();
       this.chatBubble.style.left = (tagX * 3 + bounding.left).toString();
-      this.chatTimer -= 1 / 60.0;
+      this.chatTimer -= DT;
       if (this.chatTimer < 0.0) {
         this.chatBubble.className = "hidden chat-bubble";
       }
@@ -138,14 +168,28 @@ class Player extends Entity {
 const BULLET_SPRITE : number = 8 * 16 + 1; 
 
 class Bullet extends Entity {
-  constructor(x: number, y: number, dx: number, dy: number) {
+  player: string;
+  lifetime: number = 2.0;
+  constructor(player: string, x: number, y: number, dx: number, dy: number) {
     super(BULLET_SPRITE, x, y);
     this.dirX = dx;
     this.dirY = dy;
     this.speed = 2;
+    this.player = player;
+  }
+  update() {
+    this.lifetime -= DT;
+    if (this.lifetime < 0.0) {
+      this.delete();
+    }
+    super.update();
+  }
+  onCollideWithMap(x: number, y: number, tile: number) {
+    this.delete();
   }
 }
 
+let entities : Entity[] = [];
 let players : Record<string, Player> = {};
 
 let actions : Record<string, string> = {
@@ -199,8 +243,8 @@ function drawTilemap(map: any) {
 }
 
 function update() {
-  for (let player in players) {
-    players[player].update();
+  for (const entity of entities) {
+    entity.update();
   }
   for (let i in input) {
     input[i].justPressed = false;
@@ -214,8 +258,8 @@ function drawLoop() {
   if (!channel) return;
   update();
   drawTilemap(tilemap);
-  for (let player in players) {
-    players[player].draw();
+  for (const entity of entities) {
+    entity.draw();
   }
 }
 
@@ -258,20 +302,34 @@ class  ChatMessageData {
   text: string = "";
 };
 class PlayerMovedData {
-  mx : number = 0;
-  my : number = 0;
+  mx: number = 0;
+  my: number = 0;
   playerID : string = "";
 }
 class ZombiesSpawnedData {
-  x : number;
-  y : number;
+  x: number;
+  y: number;
   count: number = 1;
   constructor(x: number, y: number) {
     this.x = x;
     this.y = y;
   }
 }
-type MessageData = ChatMessageData | PlayerMovedData | ZombiesSpawnedData; 
+class PlayerShotData {
+  player: string;
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+  constructor(player: string, x: number, y: number, dx: number, dy: number) {
+    this.player = player;
+    this.x = x;
+    this.y = y;
+    this.dx = dx;
+    this.dy = dy;
+  }  
+}
+type MessageData = ChatMessageData | PlayerMovedData | ZombiesSpawnedData | PlayerShotData; 
 class Message {
   type: MessageType = MessageType.CHAT_MESSAGE;
   data: MessageData = new ChatMessageData;
@@ -279,6 +337,16 @@ class Message {
 
 let channel : any = null;
 
+
+function spawnPlayer(name: string, userID: string) {
+  let player = new Player(name, userID);
+  entities.push(player);
+  players[userID] = player;
+}
+
+function deletePlayer(userID: string) {
+  players[userID].delete();
+}
 
 function joinChannel(channelName: string) {
   if (channel) {
@@ -309,17 +377,6 @@ function joinChannel(channelName: string) {
   });
 
   channel.on('presence', { event: 'sync' }, () => {
-    let selfPlayer = players[authUser.id];
-    if (selfPlayer) {
-      let playerMoveMessage : Message = new Message;
-      playerMoveMessage.type = MessageType.PLAYER_MOVED;
-      playerMoveMessage.data = new PlayerMovedData;
-      playerMoveMessage.data.mx = selfPlayer.x;
-      playerMoveMessage.data.my = selfPlayer.y;
-      playerMoveMessage.data.playerID = authUser["id"];
-      broadcastMessage(playerMoveMessage);
-    }
-
     let playerList = <HTMLUListElement>document.getElementById("account-data")?.getElementsByTagName("ul")[0];
     while (playerList.firstChild) {
       playerList.removeChild(playerList.firstChild);
@@ -336,9 +393,7 @@ function joinChannel(channelName: string) {
   // @ts-ignore
   channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
     for (let presence of leftPresences) {
-      console.log(presence);
-      players[presence.user].onDelete();
-      delete players[presence.user];
+      deletePlayer(presence.user);
       chatNotify("Usuário " + presence.name + " saiu da sala");
     }
   });
@@ -346,9 +401,8 @@ function joinChannel(channelName: string) {
   // @ts-ignore
   channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
     for (let playerStatus of newPresences) {
-      players[playerStatus.user] = new Player(playerStatus.name, playerStatus.user);
+      spawnPlayer(playerStatus.name, playerStatus.user);
       chatNotify("Usuário " + playerStatus.name + " entrou na sala");
-
     }
   });
 
@@ -388,9 +442,9 @@ exitChannelButton.addEventListener('click', (e) => {
   if (roomExitMenu)
     roomExitMenu.className = "hidden";
   for (let player in players) {
-      players[player].onDelete();
-      delete players[player];
+    deletePlayer(player);
   }
+  entities = [];
 });
 
 function onPlayerMoved(msg: PlayerMovedData) {

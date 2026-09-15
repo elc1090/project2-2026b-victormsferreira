@@ -10,6 +10,7 @@ const canvasCtx = gameCanvas.getContext("2d");
 const spritesheet = document.getElementById("tileset");
 const messageBox = document.getElementById("message-box");
 const chatLog = document.getElementById("chatlog");
+const DT = 1.0 / 60.0;
 let authUser = supabase.auth.getUser().data;
 let userName = "";
 let userStatus = {
@@ -35,17 +36,37 @@ class Entity {
     constructor(sprite, x, y) {
         this.dirX = 1;
         this.dirY = 0;
-        this.speed = 1;
+        this.speed = 0;
         this.x = x;
         this.y = y;
         this.sprite = sprite;
     }
+    delete() {
+        const ind = entities.indexOf(this);
+        if (ind >= 0)
+            entities.splice(ind, 1);
+        this.onDelete();
+    }
+    onDelete() {
+    }
     update() {
         this.x += this.dirX * this.speed;
         this.y += this.dirY * this.speed;
+        this.checkForMapCollision();
+    }
+    checkForMapCollision() {
+        let x = this.x + 4;
+        let y = this.y + 6;
+        if (x < 0 || y < 0 || x > tilemap.layers[0].width * 8 || y > tilemap.layers[0].height * 8) {
+            this.onCollideWithMap(this.x, this.y, -1);
+        }
     }
     draw() {
         drawSprite(this.sprite, this.x, this.y);
+    }
+    onCollideWithEntity(other) {
+    }
+    onCollideWithMap(x, y, tile) {
     }
 }
 class Player extends Entity {
@@ -65,6 +86,8 @@ class Player extends Entity {
     }
     onDelete() {
         gameCanvasContainer.removeChild(this.nameTag);
+        gameCanvasContainer.removeChild(this.chatBubble);
+        delete players[this.id];
     }
     setPosition(x, y) {
         this.x = x;
@@ -102,6 +125,13 @@ class Player extends Entity {
             playerMoveMessage.data.my = this.y;
             playerMoveMessage.data.playerID = authUser["id"];
             broadcastMessage(playerMoveMessage);
+            if (input.shoot.justPressed) {
+                entities.push(new Bullet(this.id, this.x, this.y, this.dirX, this.dirY));
+                let shootMessage = new Message;
+                shootMessage.type = MessageType.PLAYER_SHOT;
+                shootMessage.data = new PlayerShotData(this.id, this.x, this.y, this.dirX, this.dirY);
+                broadcastMessage(shootMessage);
+            }
             cam.moveTo(this.x, this.y);
         }
         super.update();
@@ -116,7 +146,7 @@ class Player extends Entity {
             [tagX, tagY] = cam.transform(this.x + 6, this.y - 10);
             this.chatBubble.style.top = (tagY * 3 + bounding.top).toString();
             this.chatBubble.style.left = (tagX * 3 + bounding.left).toString();
-            this.chatTimer -= 1 / 60.0;
+            this.chatTimer -= DT;
             if (this.chatTimer < 0.0) {
                 this.chatBubble.className = "hidden chat-bubble";
             }
@@ -125,13 +155,26 @@ class Player extends Entity {
 }
 const BULLET_SPRITE = 8 * 16 + 1;
 class Bullet extends Entity {
-    constructor(x, y, dx, dy) {
+    constructor(player, x, y, dx, dy) {
         super(BULLET_SPRITE, x, y);
+        this.lifetime = 2.0;
         this.dirX = dx;
         this.dirY = dy;
         this.speed = 2;
+        this.player = player;
+    }
+    update() {
+        this.lifetime -= DT;
+        if (this.lifetime < 0.0) {
+            this.delete();
+        }
+        super.update();
+    }
+    onCollideWithMap(x, y, tile) {
+        this.delete();
     }
 }
+let entities = [];
 let players = {};
 let actions = {
     ArrowLeft: "left",
@@ -180,8 +223,8 @@ function drawTilemap(map) {
     }
 }
 function update() {
-    for (let player in players) {
-        players[player].update();
+    for (const entity of entities) {
+        entity.update();
     }
     for (let i in input) {
         input[i].justPressed = false;
@@ -196,8 +239,8 @@ function drawLoop() {
         return;
     update();
     drawTilemap(tilemap);
-    for (let player in players) {
-        players[player].draw();
+    for (const entity of entities) {
+        entity.draw();
     }
 }
 async function load() {
@@ -252,6 +295,15 @@ class ZombiesSpawnedData {
         this.y = y;
     }
 }
+class PlayerShotData {
+    constructor(player, x, y, dx, dy) {
+        this.player = player;
+        this.x = x;
+        this.y = y;
+        this.dx = dx;
+        this.dy = dy;
+    }
+}
 class Message {
     constructor() {
         this.type = MessageType.CHAT_MESSAGE;
@@ -259,6 +311,14 @@ class Message {
     }
 }
 let channel = null;
+function spawnPlayer(name, userID) {
+    let player = new Player(name, userID);
+    entities.push(player);
+    players[userID] = player;
+}
+function deletePlayer(userID) {
+    players[userID].delete();
+}
 function joinChannel(channelName) {
     if (channel) {
         supabase.removeChannel(channel);
@@ -283,16 +343,6 @@ function joinChannel(channelName) {
     });
     channel.on('presence', { event: 'sync' }, () => {
         var _a;
-        let selfPlayer = players[authUser.id];
-        if (selfPlayer) {
-            let playerMoveMessage = new Message;
-            playerMoveMessage.type = MessageType.PLAYER_MOVED;
-            playerMoveMessage.data = new PlayerMovedData;
-            playerMoveMessage.data.mx = selfPlayer.x;
-            playerMoveMessage.data.my = selfPlayer.y;
-            playerMoveMessage.data.playerID = authUser["id"];
-            broadcastMessage(playerMoveMessage);
-        }
         let playerList = (_a = document.getElementById("account-data")) === null || _a === void 0 ? void 0 : _a.getElementsByTagName("ul")[0];
         while (playerList.firstChild) {
             playerList.removeChild(playerList.firstChild);
@@ -308,16 +358,14 @@ function joinChannel(channelName) {
     // @ts-ignore
     channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
         for (let presence of leftPresences) {
-            console.log(presence);
-            players[presence.user].onDelete();
-            delete players[presence.user];
+            deletePlayer(presence.user);
             chatNotify("Usuário " + presence.name + " saiu da sala");
         }
     });
     // @ts-ignore
     channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
         for (let playerStatus of newPresences) {
-            players[playerStatus.user] = new Player(playerStatus.name, playerStatus.user);
+            spawnPlayer(playerStatus.name, playerStatus.user);
             chatNotify("Usuário " + playerStatus.name + " entrou na sala");
         }
     });
@@ -355,9 +403,9 @@ exitChannelButton.addEventListener('click', (e) => {
     if (roomExitMenu)
         roomExitMenu.className = "hidden";
     for (let player in players) {
-        players[player].onDelete();
-        delete players[player];
+        deletePlayer(player);
     }
+    entities = [];
 });
 function onPlayerMoved(msg) {
     if (!msg.playerID)
