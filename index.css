@@ -79,7 +79,8 @@ button:active {
   image-rendering: pixelated;
   font-smooth: none;
   -webkit-font-smoothing : none;
-  overflow: hidden;
+  user-select: none;
+  overflow: clip;
 }
 
 #game-container {
@@ -134,7 +135,7 @@ button:active {
 
 .chat-bubble {
   position: absolute;
-  background:  var(--darkyellow);
+  background:  #ffffcc;
   border: 1px solid var(--black);
   border-radius: 4px 4px 4px 0px;
 }

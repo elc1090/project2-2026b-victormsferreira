@@ -8,7 +8,6 @@ const gameCanvas = document.getElementById("game-canvas");
 const gameCanvasContainer = document.getElementById("game-canvas-container");
 const canvasCtx = gameCanvas.getContext("2d");
 const spritesheet = document.getElementById("tileset");
-const bmpFont = document.getElementById("font");
 const messageBox = document.getElementById("message-box");
 const chatLog = document.getElementById("chatlog");
 let authUser = supabase.auth.getUser().data;
@@ -24,53 +23,42 @@ class Camera {
         this.smooth = 0.1;
     }
     transform(posX, posY) {
-        return [posX - this.x + 160, posY - this.y + 120];
+        return [Math.round(posX - this.x + 160), Math.round(posY - this.y + 120)];
     }
     moveTo(newX, newY) {
         this.x = this.x + (newX - this.x) * this.smooth;
         this.y = this.y + (newY - this.y) * this.smooth;
     }
 }
-var MessageType;
-(function (MessageType) {
-    MessageType["CHAT_MESSAGE"] = "ChatMessage";
-    MessageType["PLAYER_MOVED"] = "PlayerMoved";
-})(MessageType || (MessageType = {}));
-class ChatMessageData {
-    constructor() {
-        this.user = "";
-        this.text = "";
-    }
-}
-;
-class PlayerMovedData {
-    constructor() {
-        this.mx = 0;
-        this.my = 0;
-        this.playerID = "";
-    }
-}
-class Message {
-    constructor() {
-        this.type = MessageType.CHAT_MESSAGE;
-        this.data = new ChatMessageData;
-    }
-}
-let channel = null;
 let cam = new Camera();
-class Player {
+class Entity {
+    constructor(sprite, x, y) {
+        this.dirX = 1;
+        this.dirY = 0;
+        this.speed = 1;
+        this.x = x;
+        this.y = y;
+        this.sprite = sprite;
+    }
+    update() {
+        this.x += this.dirX * this.speed;
+        this.y += this.dirY * this.speed;
+    }
+    draw() {
+        drawSprite(this.sprite, this.x, this.y);
+    }
+}
+class Player extends Entity {
     constructor(name, id) {
+        super(4, 8, 8);
         this.chatText = "";
         this.chatTimer = 0;
         this.name = name;
-        this.x = 8;
-        this.y = 8;
         this.id = id;
-        this.sprite = 4;
         this.nameTag = document.createElement("p");
         this.chatBubble = document.createElement("p");
         this.nameTag.className = "player-nametag";
-        this.chatBubble.className = "hidden";
+        this.chatBubble.className = "hidden chat-bubble";
         this.nameTag.innerText = name;
         gameCanvasContainer.appendChild(this.nameTag);
         gameCanvasContainer.appendChild(this.chatBubble);
@@ -87,22 +75,61 @@ class Player {
         this.chatTimer = 5.0;
         this.chatBubble.innerText = text;
     }
+    update() {
+        if (this.id == authUser.id) {
+            let dx = 0;
+            let dy = 0;
+            if (input.left.pressed)
+                dx -= 1.0;
+            if (input.right.pressed)
+                dx += 1.0;
+            if (input.up.pressed)
+                dy -= 1.0;
+            if (input.down.pressed)
+                dy += 1.0;
+            let playerMoveMessage = new Message;
+            playerMoveMessage.type = MessageType.PLAYER_MOVED;
+            playerMoveMessage.data = new PlayerMovedData;
+            if (dx != 0 || dy != 0) {
+                this.dirX = dx;
+                this.dirY = dy;
+                this.speed = 1;
+            }
+            else {
+                this.speed = 0;
+            }
+            playerMoveMessage.data.mx = this.x;
+            playerMoveMessage.data.my = this.y;
+            playerMoveMessage.data.playerID = authUser["id"];
+            broadcastMessage(playerMoveMessage);
+            cam.moveTo(this.x, this.y);
+        }
+        super.update();
+    }
     draw() {
-        drawSprite(this.sprite, this.x, this.y);
-        //drawText(this.name, this.x, this.y + 8);
+        super.draw();
         let [tagX, tagY] = cam.transform(this.x, this.y + 8);
         let bounding = gameCanvas.getBoundingClientRect();
         this.nameTag.style.top = (tagY * 3 + bounding.top).toString();
         this.nameTag.style.left = (tagX * 3 + bounding.left).toString();
         if (this.chatTimer > 0.0) {
-            [tagX, tagY] = cam.transform(this.x + 4, this.y - 16);
+            [tagX, tagY] = cam.transform(this.x + 6, this.y - 10);
             this.chatBubble.style.top = (tagY * 3 + bounding.top).toString();
             this.chatBubble.style.left = (tagX * 3 + bounding.left).toString();
             this.chatTimer -= 1 / 60.0;
             if (this.chatTimer < 0.0) {
-                this.chatBubble.className = "hidden";
+                this.chatBubble.className = "hidden chat-bubble";
             }
         }
+    }
+}
+const BULLET_SPRITE = 8 * 16 + 1;
+class Bullet extends Entity {
+    constructor(x, y, dx, dy) {
+        super(BULLET_SPRITE, x, y);
+        this.dirX = dx;
+        this.dirY = dy;
+        this.speed = 2;
     }
 }
 let players = {};
@@ -131,20 +158,6 @@ async function loadTilemap() {
     let res = await fetch(MAP_URL);
     return await res.json();
 }
-function drawText(text, x, y) {
-    if (canvasCtx) {
-        const SIZE = 8;
-        for (let i = 0; i < text.length; i++) {
-            let char = text.charCodeAt(i);
-            if (char > 256)
-                continue;
-            const sx = SIZE * (char % 16);
-            const sy = SIZE * Math.floor(char / 16);
-            const [dx, dy] = cam.transform(x + i * 5, y);
-            canvasCtx.drawImage(bmpFont, sx, sy, SIZE, SIZE, dx, dy, SIZE, SIZE);
-        }
-    }
-}
 function drawSprite(spriteID, x, y) {
     if (canvasCtx) {
         const SIZE = 8;
@@ -167,31 +180,11 @@ function drawTilemap(map) {
     }
 }
 function update() {
-    let dx = 0;
-    let dy = 0;
-    if (input.left.pressed)
-        dx -= 1.0;
-    if (input.right.pressed)
-        dx += 1.0;
-    if (input.up.pressed)
-        dy -= 1.0;
-    if (input.down.pressed)
-        dy += 1.0;
-    let selfPlayer = players[authUser.id];
-    let playerMoveMessage = new Message;
-    playerMoveMessage.type = MessageType.PLAYER_MOVED;
-    playerMoveMessage.data = new PlayerMovedData;
-    selfPlayer.x += dx;
-    selfPlayer.y += dy;
-    playerMoveMessage.data.mx = selfPlayer.x;
-    playerMoveMessage.data.my = selfPlayer.y;
-    playerMoveMessage.data.playerID = authUser["id"];
-    broadcastMessage(playerMoveMessage);
+    for (let player in players) {
+        players[player].update();
+    }
     for (let i in input) {
         input[i].justPressed = false;
-    }
-    if (selfPlayer) {
-        cam.moveTo(selfPlayer.x, selfPlayer.y);
     }
 }
 function drawLoop() {
@@ -230,6 +223,42 @@ function onKeyUp(key) {
         }
     }
 }
+// SUPABASE REALTIME STUFF
+var MessageType;
+(function (MessageType) {
+    MessageType["CHAT_MESSAGE"] = "ChatMessage";
+    MessageType["PLAYER_MOVED"] = "PlayerMoved";
+    MessageType["PLAYER_SHOT"] = "PlayerShot";
+    MessageType["ZOMBIES_SPAWN"] = "ZombiesSpawned";
+})(MessageType || (MessageType = {}));
+class ChatMessageData {
+    constructor() {
+        this.user = "";
+        this.text = "";
+    }
+}
+;
+class PlayerMovedData {
+    constructor() {
+        this.mx = 0;
+        this.my = 0;
+        this.playerID = "";
+    }
+}
+class ZombiesSpawnedData {
+    constructor(x, y) {
+        this.count = 1;
+        this.x = x;
+        this.y = y;
+    }
+}
+class Message {
+    constructor() {
+        this.type = MessageType.CHAT_MESSAGE;
+        this.data = new ChatMessageData;
+    }
+}
+let channel = null;
 function joinChannel(channelName) {
     if (channel) {
         supabase.removeChannel(channel);
@@ -325,6 +354,10 @@ exitChannelButton.addEventListener('click', (e) => {
         roomJoinMenu.className = "login-screen";
     if (roomExitMenu)
         roomExitMenu.className = "hidden";
+    for (let player in players) {
+        players[player].onDelete();
+        delete players[player];
+    }
 });
 function onPlayerMoved(msg) {
     if (!msg.playerID)
