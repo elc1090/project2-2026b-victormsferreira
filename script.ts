@@ -22,9 +22,7 @@ let userStatus = {
   name: "",
   x: Math.floor(Math.random() * 8),
   y: Math.floor(Math.random() * 8),
-}
-
-let joinedChannel : boolean = false;
+};
 
 class Camera {
   x: number = 0;
@@ -61,16 +59,12 @@ class Player {
   name: string;
   x : number;
   y : number;
-  rx : number;
-  ry : number;
   id : string;
   sprite: number;
   constructor(name : string, id : string) {
     this.name = name;
     this.x = 8;
     this.y = 8;
-    this.rx = 8;
-    this.ry = 8;
 
     this.id = id;
     this.sprite = 4;
@@ -80,10 +74,8 @@ class Player {
     this.y = y;
   }
   draw() {
-    this.rx = this.rx + (this.x - this.rx) * 0.1;
-    this.ry = this.ry + (this.y - this.ry) * 0.1;
-    drawSprite(this.sprite, this.rx, this.ry);
-    drawText(this.name, this.rx, this.ry + 8);
+    drawSprite(this.sprite, this.x, this.y);
+    drawText(this.name, this.x, this.y + 8);
   }
 }
 
@@ -239,16 +231,25 @@ function joinChannel(channelName: string) {
 
 
   channel.on('broadcast', { event: MessageType.CHAT_MESSAGE }, (message : any) => {
-      console.log(message);
       newChatMessage(message.payload);
   });
 
   channel.on('broadcast', { event: MessageType.PLAYER_MOVED }, (message : any) => {
-      console.log(message);
       onPlayerMoved(message.payload);
   });
 
   channel.on('presence', { event: 'sync' }, () => {
+    let playerList = <HTMLUListElement>document.getElementById("account-data")?.getElementsByTagName("ul")[0];
+    while (playerList.firstChild) {
+      playerList.removeChild(playerList.firstChild);
+    }
+    const state = channel.presenceState();
+    for (let key in state) {
+      let presence = state[key];
+      let listItem = document.createElement("li");
+      listItem.innerText = presence[0].name;
+      playerList.appendChild(listItem);
+    }
   });
 
   // @ts-ignore
@@ -265,8 +266,6 @@ function joinChannel(channelName: string) {
       players[playerStatus.user] = new Player(playerStatus.name, playerStatus.user);
       players[playerStatus.user].x = playerStatus.x;
       players[playerStatus.user].y = playerStatus.y;
-      players[playerStatus.user].rx = playerStatus.x;
-      players[playerStatus.user].ry = playerStatus.y;
     }
   });
 
