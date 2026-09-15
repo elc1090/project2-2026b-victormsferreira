@@ -176,26 +176,6 @@ class Bullet extends Entity {
 }
 let entities = [];
 let players = {};
-let actions = {
-    ArrowLeft: "left",
-    ArrowUp: "up",
-    ArrowDown: "down",
-    ArrowRight: "right",
-    KeyX: "shoot",
-};
-class Input {
-    constructor() {
-        this.pressed = false;
-        this.justPressed = false;
-    }
-}
-let input = {
-    left: new Input(),
-    right: new Input(),
-    up: new Input(),
-    down: new Input(),
-    shoot: new Input(),
-};
 let tilemap;
 async function loadTilemap() {
     let res = await fetch(MAP_URL);
@@ -249,6 +229,27 @@ async function load() {
         tilemap = await loadTilemap();
     }
 }
+// INPUT SYSTEM
+let actions = {
+    ArrowLeft: "left",
+    ArrowUp: "up",
+    ArrowDown: "down",
+    ArrowRight: "right",
+    KeyX: "shoot",
+};
+class Input {
+    constructor() {
+        this.pressed = false;
+        this.justPressed = false;
+    }
+}
+let input = {
+    left: new Input(),
+    right: new Input(),
+    up: new Input(),
+    down: new Input(),
+    shoot: new Input(),
+};
 function onKeyDown(key) {
     if (key.code in actions) {
         let action = actions[key.code];
@@ -266,6 +267,8 @@ function onKeyUp(key) {
         }
     }
 }
+window.addEventListener("keydown", onKeyDown, false);
+window.addEventListener("keyup", onKeyUp, false);
 // SUPABASE REALTIME STUFF
 var MessageType;
 (function (MessageType) {
@@ -338,8 +341,11 @@ function joinChannel(channelName) {
         newChatMessage(message.payload);
     });
     channel.on('broadcast', { event: MessageType.PLAYER_MOVED }, (message) => {
-        console.log(message);
         onPlayerMoved(message.payload);
+    });
+    channel.on('broadcast', { event: MessageType.PLAYER_SHOT }, (message) => {
+        let shot = message.payload;
+        entities.push(new Bullet(shot.player, shot.x, shot.y, shot.dx, shot.dy));
     });
     channel.on('presence', { event: 'sync' }, () => {
         var _a;
@@ -429,20 +435,12 @@ function newChatMessage(msg) {
     }
 }
 function broadcastMessage(msg) {
-    console.log("Broadcasting: ", msg);
     channel.send({
         type: "broadcast",
         event: msg.type,
         payload: msg.data,
     });
 }
-window.addEventListener("keydown", onKeyDown, false);
-window.addEventListener("keyup", onKeyUp, false);
-async function go() {
-    await load();
-    window.setInterval(drawLoop, 1000 / 60);
-}
-go();
 function sendChatMessage(str) {
     let msg = new Message;
     msg.type = MessageType.CHAT_MESSAGE;
@@ -552,3 +550,8 @@ window.addEventListener("unload", (e) => {
     if (channel)
         supabase.removeChannel(channel);
 });
+async function go() {
+    await load();
+    window.setInterval(drawLoop, 1000 / 60);
+}
+go();

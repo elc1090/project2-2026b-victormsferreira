@@ -192,27 +192,6 @@ class Bullet extends Entity {
 let entities : Entity[] = [];
 let players : Record<string, Player> = {};
 
-let actions : Record<string, string> = {
-  ArrowLeft: "left",
-  ArrowUp: "up",
-  ArrowDown: "down",
-  ArrowRight: "right",  
-  KeyX: "shoot",
-}
-
-class Input {
-  pressed : boolean = false;
-  justPressed : boolean = false;
-}
-
-let input : Record<string, Input> = {
-  left: new Input(),
-  right: new Input(),
-  up: new Input(),
-  down: new Input(),
-  shoot: new Input(),
-};
-
 let tilemap : any;
 async function loadTilemap() {
   let res = await fetch (MAP_URL);
@@ -270,6 +249,30 @@ async function load() {
   }
 }
 
+
+// INPUT SYSTEM
+
+let actions : Record<string, string> = {
+  ArrowLeft: "left",
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowRight: "right",  
+  KeyX: "shoot",
+}
+
+class Input {
+  pressed : boolean = false;
+  justPressed : boolean = false;
+}
+
+let input : Record<string, Input> = {
+  left: new Input(),
+  right: new Input(),
+  up: new Input(),
+  down: new Input(),
+  shoot: new Input(),
+};
+
 function onKeyDown(key: KeyboardEvent) {
   if (key.code in actions) {
     let action = actions[key.code];
@@ -288,6 +291,10 @@ function onKeyUp(key: KeyboardEvent) {
     }
   }
 }
+
+window.addEventListener("keydown", onKeyDown, false);
+window.addEventListener("keyup", onKeyUp, false);
+
 
 // SUPABASE REALTIME STUFF
 
@@ -368,13 +375,18 @@ function joinChannel(channelName: string) {
 
 
   channel.on('broadcast', { event: MessageType.CHAT_MESSAGE }, (message : any) => {
-      newChatMessage(message.payload);
+    newChatMessage(message.payload);
   });
 
   channel.on('broadcast', { event: MessageType.PLAYER_MOVED }, (message : any) => {
-    console.log(message);
     onPlayerMoved(message.payload);
   });
+
+  channel.on('broadcast', { event: MessageType.PLAYER_SHOT }, (message : any) => {
+    let shot : PlayerShotData = message.payload;
+    entities.push(new Bullet(shot.player, shot.x, shot.y, shot.dx, shot.dy));  
+  });
+
 
   channel.on('presence', { event: 'sync' }, () => {
     let playerList = <HTMLUListElement>document.getElementById("account-data")?.getElementsByTagName("ul")[0];
@@ -472,7 +484,6 @@ function newChatMessage(msg: ChatMessageData) {
 }
 
 function broadcastMessage(msg: Message) {
-  console.log("Broadcasting: ", msg);
   channel.send({
     type: "broadcast",
     event: msg.type,
@@ -481,14 +492,7 @@ function broadcastMessage(msg: Message) {
 }
 
 
-window.addEventListener("keydown", onKeyDown, false);
-window.addEventListener("keyup", onKeyUp, false);
 
-async function go() {
-  await load();
-  window.setInterval(drawLoop, 1000 / 60);
-}
-go();
 
 function sendChatMessage(str : string) {
   let msg : Message = new Message;
@@ -606,3 +610,10 @@ window.addEventListener("unload", (e) => {
   if (channel)
     supabase.removeChannel(channel);
 })
+
+
+async function go() {
+  await load();
+  window.setInterval(drawLoop, 1000 / 60);
+}
+go();
