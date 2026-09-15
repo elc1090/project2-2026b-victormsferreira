@@ -7,6 +7,7 @@ const MAP_URL = "https://yduvtxtfzcgfeaehgisj.supabase.co/storage/v1/object/publ
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const gameCanvas = <HTMLCanvasElement>document.getElementById("game-canvas");
+const gameCanvasContainer = <HTMLDivElement>document.getElementById("game-canvas-container");
 const canvasCtx = gameCanvas.getContext("2d");
 const spritesheet = <HTMLImageElement>document.getElementById("tileset");
 const bmpFont = <HTMLImageElement>document.getElementById("font");
@@ -22,9 +23,7 @@ let userStatus = {
   name: "",
   x: Math.floor(Math.random() * 8),
   y: Math.floor(Math.random() * 8),
-}
-
-let joinedChannel : boolean = false;
+};
 
 class Camera {
   x: number = 0;
@@ -61,29 +60,36 @@ class Player {
   name: string;
   x : number;
   y : number;
-  rx : number;
-  ry : number;
   id : string;
   sprite: number;
+  nameTag: HTMLParagraphElement;
+  
+  onDelete() {
+    gameCanvasContainer.removeChild(this.nameTag);
+  }
+
   constructor(name : string, id : string) {
     this.name = name;
     this.x = 8;
     this.y = 8;
-    this.rx = 8;
-    this.ry = 8;
 
     this.id = id;
     this.sprite = 4;
+    this.nameTag = document.createElement("p");
+    this.nameTag.className = "player-nametag";
+    this.nameTag.innerText = name;
+    gameCanvasContainer.appendChild(this.nameTag);
   }
   setPosition(x: number, y : number) {
     this.x = x;
     this.y = y;
   }
   draw() {
-    this.rx = this.rx + (this.x - this.rx) * 0.1;
-    this.ry = this.ry + (this.y - this.ry) * 0.1;
-    drawSprite(this.sprite, this.rx, this.ry);
-    drawText(this.name, this.rx, this.ry + 8);
+    drawSprite(this.sprite, this.x, this.y);
+    //drawText(this.name, this.x, this.y + 8);
+    let [tagX, tagY] = cam.transform(this.x, this.y + 8);
+    this.nameTag.style.top = (tagY * 3).toString();
+    this.nameTag.style.left = (tagX * 3).toString();
   }
 }
 
@@ -93,7 +99,7 @@ let actions : Record<string, string> = {
   ArrowLeft: "left",
   ArrowUp: "up",
   ArrowDown: "down",
-  ArrowRight: "right",
+  ArrowRight: "right",  
   KeyX: "shoot",
 }
 
@@ -220,8 +226,9 @@ function onKeyUp(key: KeyboardEvent) {
 
 
 function joinChannel(channelName: string) {
-  if (channel)
+  if (channel) {
     supabase.removeChannel(channel);
+  }
 
   userStatus.user = authUser.id,
   userStatus.name = userName,
@@ -239,16 +246,25 @@ function joinChannel(channelName: string) {
 
 
   channel.on('broadcast', { event: MessageType.CHAT_MESSAGE }, (message : any) => {
-      console.log(message);
       newChatMessage(message.payload);
   });
 
   channel.on('broadcast', { event: MessageType.PLAYER_MOVED }, (message : any) => {
-      console.log(message);
       onPlayerMoved(message.payload);
   });
 
   channel.on('presence', { event: 'sync' }, () => {
+    let playerList = <HTMLUListElement>document.getElementById("account-data")?.getElementsByTagName("ul")[0];
+    while (playerList.firstChild) {
+      playerList.removeChild(playerList.firstChild);
+    }
+    const state = channel.presenceState();
+    for (let key in state) {
+      let presence = state[key];
+      let listItem = document.createElement("li");
+      listItem.innerText = presence[0].name;
+      playerList.appendChild(listItem);
+    }
   });
 
   // @ts-ignore
@@ -265,8 +281,6 @@ function joinChannel(channelName: string) {
       players[playerStatus.user] = new Player(playerStatus.name, playerStatus.user);
       players[playerStatus.user].x = playerStatus.x;
       players[playerStatus.user].y = playerStatus.y;
-      players[playerStatus.user].rx = playerStatus.x;
-      players[playerStatus.user].ry = playerStatus.y;
     }
   });
 
@@ -278,16 +292,37 @@ function joinChannel(channelName: string) {
      channel.track(userStatus);
   });
 
+  const roomJoinMenu = document.getElementById("room-container");
+  const roomExitMenu = document.getElementById("room-exit");
+  if (roomJoinMenu)
+    roomJoinMenu.className = "hidden";
+  if (roomExitMenu) {
+    roomExitMenu.getElementsByTagName("p")[0].innerText = channelName;
+    roomExitMenu.className = "login-screen";
+  }
 }
 const joinChannelButton = <HTMLButtonElement>document.getElementById("join-channel-button");
+const exitChannelButton = <HTMLButtonElement>document.getElementById("exit-channel-button");
 joinChannelButton.addEventListener('click', (e) => {
   let channelName = (<HTMLInputElement>document.getElementById("channel-name")).value;
   if (channelName.length > 0) {
     joinChannel("game:rooms:"+channelName);
   }
 });
+exitChannelButton.addEventListener('click', (e) => {
+  if (channel)
+    supabase.removeChannel(channel);
+  channel = null;
+  const roomJoinMenu = document.getElementById("room-container");
+  const roomExitMenu = document.getElementById("room-exit");
+  if (roomJoinMenu)
+    roomJoinMenu.className = "login-screen";
+  if (roomExitMenu)
+    roomExitMenu.className = "hidden";
+});
 
 function onPlayerMoved(msg: PlayerMovedData) {
+  console.log(msg);
   let dX = msg.mx * msg.mx;
   let dY = msg.my * msg.my;
   let d = dX + dY;
@@ -436,6 +471,6 @@ loginButton.addEventListener('click', (e) => {
 })
 
 window.addEventListener("unload", (e) => {
-  if (channel)
-    supabase.removeChannel(channel);
+  //if (channel)
+  //  supabase.removeChannel(channel);
 })

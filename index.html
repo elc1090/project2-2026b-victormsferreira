@@ -34,13 +34,23 @@
         </div>
         <div id="account-data" class="hidden">
           <p>Logged in as</p>
-          <label for="channel-name">Sala:</label>
-          <input type="text" name="channel-name" id="channel-name" maxlength="8"/>
-          <button id="join-channel-button">Entrar</button>
+          <div id="room-container" class="login-screen">
+            <label for="channel-name">Sala:</label>
+            <input type="text" name="channel-name" id="channel-name" maxlength="8"/>
+            <button id="join-channel-button">Entrar na sala</button>
+          </div>
+          <div id="room-exit" class="hidden">
+            <p>Sala:</p>
+            <button id="exit-channel-button">Sair da sala</button>
+          </div>
+          <p>Jogadores Online:</p>
+          <ul>
+
+          </ul>
         </div>
       </div>
 
-      <div>
+      <div id="game-canvas-container">
         <canvas id="game-canvas" width="320" height="240"></canvas>
       </div>
 

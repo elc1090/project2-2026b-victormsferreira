@@ -5,6 +5,7 @@ const SUPABASE_KEY = "sb_publishable_4CmRmdx13Sy1TXfMHwL1zQ_ngA7IN6n";
 const MAP_URL = "https://yduvtxtfzcgfeaehgisj.supabase.co/storage/v1/object/public/Assets/map.tmj";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const gameCanvas = document.getElementById("game-canvas");
+const gameCanvasContainer = document.getElementById("game-canvas-container");
 const canvasCtx = gameCanvas.getContext("2d");
 const spritesheet = document.getElementById("tileset");
 const bmpFont = document.getElementById("font");
@@ -18,7 +19,6 @@ let userStatus = {
     x: Math.floor(Math.random() * 8),
     y: Math.floor(Math.random() * 8),
 };
-let joinedChannel = false;
 class Camera {
     constructor() {
         this.x = 0;
@@ -58,20 +58,26 @@ class Player {
         this.name = name;
         this.x = 8;
         this.y = 8;
-        this.rx = 8;
-        this.ry = 8;
         this.id = id;
         this.sprite = 4;
+        this.nameTag = document.createElement("p");
+        this.nameTag.className = "player-nametag";
+        this.nameTag.innerText = name;
+        gameCanvasContainer.appendChild(this.nameTag);
+    }
+    onDelete() {
+        gameCanvasContainer.removeChild(this.nameTag);
     }
     setPosition(x, y) {
         this.x = x;
         this.y = y;
     }
     draw() {
-        this.rx = this.rx + (this.x - this.rx) * 0.1;
-        this.ry = this.ry + (this.y - this.ry) * 0.1;
-        drawSprite(this.sprite, this.rx, this.ry);
-        drawText(this.name, this.rx, this.ry + 8);
+        drawSprite(this.sprite, this.x, this.y);
+        //drawText(this.name, this.x, this.y + 8);
+        let [tagX, tagY] = cam.transform(this.x, this.y + 8);
+        this.nameTag.style.top = (tagY * 3).toString();
+        this.nameTag.style.left = (tagX * 3).toString();
     }
 }
 let players = {};
@@ -200,8 +206,9 @@ function onKeyUp(key) {
     }
 }
 function joinChannel(channelName) {
-    if (channel)
+    if (channel) {
         supabase.removeChannel(channel);
+    }
     userStatus.user = authUser.id,
         userStatus.name = userName,
         userStatus.x = Math.floor(Math.random() * 8) * 8,
@@ -215,14 +222,24 @@ function joinChannel(channelName) {
             }
         });
     channel.on('broadcast', { event: MessageType.CHAT_MESSAGE }, (message) => {
-        console.log(message);
         newChatMessage(message.payload);
     });
     channel.on('broadcast', { event: MessageType.PLAYER_MOVED }, (message) => {
-        console.log(message);
         onPlayerMoved(message.payload);
     });
     channel.on('presence', { event: 'sync' }, () => {
+        var _a;
+        let playerList = (_a = document.getElementById("account-data")) === null || _a === void 0 ? void 0 : _a.getElementsByTagName("ul")[0];
+        while (playerList.firstChild) {
+            playerList.removeChild(playerList.firstChild);
+        }
+        const state = channel.presenceState();
+        for (let key in state) {
+            let presence = state[key];
+            let listItem = document.createElement("li");
+            listItem.innerText = presence[0].name;
+            playerList.appendChild(listItem);
+        }
     });
     // @ts-ignore
     channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
@@ -237,8 +254,6 @@ function joinChannel(channelName) {
             players[playerStatus.user] = new Player(playerStatus.name, playerStatus.user);
             players[playerStatus.user].x = playerStatus.x;
             players[playerStatus.user].y = playerStatus.y;
-            players[playerStatus.user].rx = playerStatus.x;
-            players[playerStatus.user].ry = playerStatus.y;
         }
     });
     channel.subscribe((status) => {
@@ -247,15 +262,36 @@ function joinChannel(channelName) {
         }
         channel.track(userStatus);
     });
+    const roomJoinMenu = document.getElementById("room-container");
+    const roomExitMenu = document.getElementById("room-exit");
+    if (roomJoinMenu)
+        roomJoinMenu.className = "hidden";
+    if (roomExitMenu) {
+        roomExitMenu.getElementsByTagName("p")[0].innerText = channelName;
+        roomExitMenu.className = "login-screen";
+    }
 }
 const joinChannelButton = document.getElementById("join-channel-button");
+const exitChannelButton = document.getElementById("exit-channel-button");
 joinChannelButton.addEventListener('click', (e) => {
     let channelName = document.getElementById("channel-name").value;
     if (channelName.length > 0) {
         joinChannel("game:rooms:" + channelName);
     }
 });
+exitChannelButton.addEventListener('click', (e) => {
+    if (channel)
+        supabase.removeChannel(channel);
+    channel = null;
+    const roomJoinMenu = document.getElementById("room-container");
+    const roomExitMenu = document.getElementById("room-exit");
+    if (roomJoinMenu)
+        roomJoinMenu.className = "login-screen";
+    if (roomExitMenu)
+        roomExitMenu.className = "hidden";
+});
 function onPlayerMoved(msg) {
+    console.log(msg);
     let dX = msg.mx * msg.mx;
     let dY = msg.my * msg.my;
     let d = dX + dY;
@@ -391,6 +427,6 @@ loginButton.addEventListener('click', (e) => {
     login(email, password);
 });
 window.addEventListener("unload", (e) => {
-    if (channel)
-        supabase.removeChannel(channel);
+    //if (channel)
+    //  supabase.removeChannel(channel);
 });
