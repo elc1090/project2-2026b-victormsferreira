@@ -16,8 +16,6 @@ let userName = "";
 let userStatus = {
     user: "",
     name: "",
-    x: Math.floor(Math.random() * 8),
-    y: Math.floor(Math.random() * 8),
 };
 class Camera {
     constructor() {
@@ -38,6 +36,13 @@ var MessageType;
     MessageType["CHAT_MESSAGE"] = "ChatMessage";
     MessageType["PLAYER_MOVED"] = "PlayerMoved";
 })(MessageType || (MessageType = {}));
+class ChatMessageData {
+    constructor() {
+        this.user = "";
+        this.text = "";
+    }
+}
+;
 class PlayerMovedData {
     constructor() {
         this.mx = 0;
@@ -48,22 +53,27 @@ class PlayerMovedData {
 class Message {
     constructor() {
         this.type = MessageType.CHAT_MESSAGE;
-        this.data = "";
+        this.data = new ChatMessageData;
     }
 }
 let channel = null;
 let cam = new Camera();
 class Player {
     constructor(name, id) {
+        this.chatText = "";
+        this.chatTimer = 0;
         this.name = name;
         this.x = 8;
         this.y = 8;
         this.id = id;
         this.sprite = 4;
         this.nameTag = document.createElement("p");
+        this.chatBubble = document.createElement("p");
         this.nameTag.className = "player-nametag";
+        this.chatBubble.className = "hidden";
         this.nameTag.innerText = name;
         gameCanvasContainer.appendChild(this.nameTag);
+        gameCanvasContainer.appendChild(this.chatBubble);
     }
     onDelete() {
         gameCanvasContainer.removeChild(this.nameTag);
@@ -72,12 +82,27 @@ class Player {
         this.x = x;
         this.y = y;
     }
+    setChatText(text) {
+        this.chatBubble.className = "chat-bubble";
+        this.chatTimer = 5.0;
+        this.chatBubble.innerText = text;
+    }
     draw() {
         drawSprite(this.sprite, this.x, this.y);
         //drawText(this.name, this.x, this.y + 8);
         let [tagX, tagY] = cam.transform(this.x, this.y + 8);
-        this.nameTag.style.top = (tagY * 3).toString();
-        this.nameTag.style.left = (tagX * 3).toString();
+        let bounding = gameCanvas.getBoundingClientRect();
+        this.nameTag.style.top = (tagY * 3 + bounding.top).toString();
+        this.nameTag.style.left = (tagX * 3 + bounding.left).toString();
+        if (this.chatTimer > 0.0) {
+            [tagX, tagY] = cam.transform(this.x + 4, this.y - 16);
+            this.chatBubble.style.top = (tagY * 3 + bounding.top).toString();
+            this.chatBubble.style.left = (tagX * 3 + bounding.left).toString();
+            this.chatTimer -= 1 / 60.0;
+            if (this.chatTimer < 0.0) {
+                this.chatBubble.className = "hidden";
+            }
+        }
     }
 }
 let players = {};
@@ -152,28 +177,28 @@ function update() {
         dy -= 1.0;
     if (input.down.pressed)
         dy += 1.0;
-    if (dx != 0 || dy != 0) {
-        let playerMoveMessage = new Message;
-        playerMoveMessage.type = MessageType.PLAYER_MOVED;
-        playerMoveMessage.data = new PlayerMovedData;
-        playerMoveMessage.data.mx = dx;
-        playerMoveMessage.data.my = dy;
-        playerMoveMessage.data.playerID = authUser["id"];
-        broadcastMessage(playerMoveMessage);
-    }
+    let selfPlayer = players[authUser.id];
+    let playerMoveMessage = new Message;
+    playerMoveMessage.type = MessageType.PLAYER_MOVED;
+    playerMoveMessage.data = new PlayerMovedData;
+    selfPlayer.x += dx;
+    selfPlayer.y += dy;
+    playerMoveMessage.data.mx = selfPlayer.x;
+    playerMoveMessage.data.my = selfPlayer.y;
+    playerMoveMessage.data.playerID = authUser["id"];
+    broadcastMessage(playerMoveMessage);
     for (let i in input) {
         input[i].justPressed = false;
     }
-    let selfPlayer = players[authUser.id];
     if (selfPlayer) {
         cam.moveTo(selfPlayer.x, selfPlayer.y);
-        userStatus.x = selfPlayer.x;
-        userStatus.y = selfPlayer.y;
-        channel.track(userStatus);
     }
 }
 function drawLoop() {
-    canvasCtx === null || canvasCtx === void 0 ? void 0 : canvasCtx.clearRect(0, 0, 320, 240);
+    if (!canvasCtx)
+        return;
+    canvasCtx.fillStyle = "rgb(0 0 0)";
+    canvasCtx.fillRect(0, 0, 320, 240);
     if (!channel)
         return;
     update();
@@ -208,15 +233,14 @@ function onKeyUp(key) {
 function joinChannel(channelName) {
     if (channel) {
         supabase.removeChannel(channel);
+        channel = null;
     }
     userStatus.user = authUser.id,
         userStatus.name = userName,
-        userStatus.x = Math.floor(Math.random() * 8) * 8,
-        userStatus.y = Math.floor(Math.random() * 8) * 8,
-        channel = supabase.channel(channelName, {
+        channel = supabase.channel("game:rooms:" + channelName, {
             config: {
                 broadcast: {
-                    self: true,
+                    self: false,
                 },
                 private: true,
             }
@@ -225,10 +249,21 @@ function joinChannel(channelName) {
         newChatMessage(message.payload);
     });
     channel.on('broadcast', { event: MessageType.PLAYER_MOVED }, (message) => {
+        console.log(message);
         onPlayerMoved(message.payload);
     });
     channel.on('presence', { event: 'sync' }, () => {
         var _a;
+        let selfPlayer = players[authUser.id];
+        if (selfPlayer) {
+            let playerMoveMessage = new Message;
+            playerMoveMessage.type = MessageType.PLAYER_MOVED;
+            playerMoveMessage.data = new PlayerMovedData;
+            playerMoveMessage.data.mx = selfPlayer.x;
+            playerMoveMessage.data.my = selfPlayer.y;
+            playerMoveMessage.data.playerID = authUser["id"];
+            broadcastMessage(playerMoveMessage);
+        }
         let playerList = (_a = document.getElementById("account-data")) === null || _a === void 0 ? void 0 : _a.getElementsByTagName("ul")[0];
         while (playerList.firstChild) {
             playerList.removeChild(playerList.firstChild);
@@ -245,15 +280,16 @@ function joinChannel(channelName) {
     channel.on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
         for (let presence of leftPresences) {
             console.log(presence);
+            players[presence.user].onDelete();
             delete players[presence.user];
+            chatNotify("Usuário " + presence.name + " saiu da sala");
         }
     });
     // @ts-ignore
     channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
         for (let playerStatus of newPresences) {
             players[playerStatus.user] = new Player(playerStatus.name, playerStatus.user);
-            players[playerStatus.user].x = playerStatus.x;
-            players[playerStatus.user].y = playerStatus.y;
+            chatNotify("Usuário " + playerStatus.name + " entrou na sala");
         }
     });
     channel.subscribe((status) => {
@@ -276,7 +312,7 @@ const exitChannelButton = document.getElementById("exit-channel-button");
 joinChannelButton.addEventListener('click', (e) => {
     let channelName = document.getElementById("channel-name").value;
     if (channelName.length > 0) {
-        joinChannel("game:rooms:" + channelName);
+        joinChannel(channelName);
     }
 });
 exitChannelButton.addEventListener('click', (e) => {
@@ -291,23 +327,25 @@ exitChannelButton.addEventListener('click', (e) => {
         roomExitMenu.className = "hidden";
 });
 function onPlayerMoved(msg) {
-    console.log(msg);
-    let dX = msg.mx * msg.mx;
-    let dY = msg.my * msg.my;
-    let d = dX + dY;
-    if (d > 0) {
-        d = Math.sqrt(d);
-        msg.mx /= d;
-        msg.my /= d;
-    }
-    players[msg.playerID].x += msg.mx;
-    players[msg.playerID].y += msg.my;
+    if (!msg.playerID)
+        return;
+    players[msg.playerID].x = msg.mx;
+    players[msg.playerID].y = msg.my;
 }
-function newChatMessage(msg) {
+function chatNotify(msg) {
     let p = document.createElement("p");
     p.innerText = msg;
+    p.className = "room-notification";
     chatLog.appendChild(p);
-    console.log(msg);
+}
+function newChatMessage(msg) {
+    if (players[msg.user]) {
+        let p = document.createElement("p");
+        p.innerText = players[msg.user].name + ": " + msg.text;
+        chatLog.appendChild(p);
+        console.log(msg);
+        players[msg.user].setChatText(msg.text);
+    }
 }
 function broadcastMessage(msg) {
     console.log("Broadcasting: ", msg);
@@ -327,13 +365,16 @@ go();
 function sendChatMessage(str) {
     let msg = new Message;
     msg.type = MessageType.CHAT_MESSAGE;
-    msg.data = str;
+    msg.data = new ChatMessageData;
+    msg.data.user = authUser.id;
+    msg.data.text = str;
     broadcastMessage(msg);
+    newChatMessage(msg.data);
 }
 messageBox.addEventListener("keypress", function (e) {
     if (e.code == "Enter") {
         if (this.value.length > 0) {
-            sendChatMessage(userName + ": " + this.value);
+            sendChatMessage(this.value);
             this.value = "";
         }
     }
@@ -427,6 +468,6 @@ loginButton.addEventListener('click', (e) => {
     login(email, password);
 });
 window.addEventListener("unload", (e) => {
-    //if (channel)
-    //  supabase.removeChannel(channel);
+    if (channel)
+        supabase.removeChannel(channel);
 });

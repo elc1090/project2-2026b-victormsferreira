@@ -4,6 +4,9 @@
     <link rel="stylesheet" href="index.css"/>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="game-container">
@@ -51,13 +54,14 @@
       </div>
 
       <div id="game-canvas-container">
+        <p class="titlebar">Zombie Survivors</p>
         <canvas id="game-canvas" width="320" height="240"></canvas>
       </div>
 
       <div id="chat">
         <div id="chatlog">
         </div>
-        <input type="text" id="message-box" maxlength="64"/>
+        <input type="text" id="message-box" maxlengths="64"/>
       </div>
     </div>
     
