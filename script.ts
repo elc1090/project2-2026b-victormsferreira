@@ -274,6 +274,7 @@ let input : Record<string, Input> = {
 };
 
 function onKeyDown(key: KeyboardEvent) {
+  if (key.repeat) return;
   if (key.code in actions) {
     let action = actions[key.code];
     if (action in input) {
