@@ -250,13 +250,33 @@ function joinChannel(channelName) {
         }
         channel.track(userStatus);
     });
+    const roomJoinMenu = document.getElementById("room-container");
+    const roomExitMenu = document.getElementById("room-exit");
+    if (roomJoinMenu)
+        roomJoinMenu.className = "hidden";
+    if (roomExitMenu) {
+        roomExitMenu.getElementsByTagName("p")[0].innerText = channelName;
+        roomExitMenu.className = "login-screen";
+    }
 }
 const joinChannelButton = document.getElementById("join-channel-button");
+const exitChannelButton = document.getElementById("exit-channel-button");
 joinChannelButton.addEventListener('click', (e) => {
     let channelName = document.getElementById("channel-name").value;
     if (channelName.length > 0) {
         joinChannel("game:rooms:" + channelName);
     }
+});
+exitChannelButton.addEventListener('click', (e) => {
+    if (channel)
+        supabase.removeChannel(channel);
+    channel = null;
+    const roomJoinMenu = document.getElementById("room-container");
+    const roomExitMenu = document.getElementById("room-exit");
+    if (roomJoinMenu)
+        roomJoinMenu.className = "login-screen";
+    if (roomExitMenu)
+        roomExitMenu.className = "hidden";
 });
 function onPlayerMoved(msg) {
     let dX = msg.mx * msg.mx;
