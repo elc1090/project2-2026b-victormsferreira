@@ -280,12 +280,14 @@ function joinChannel(channelName) {
         for (let presence of leftPresences) {
             console.log(presence);
             delete players[presence.user];
+            chatNotify("Usuário " + presence.name + " saiu da sala");
         }
     });
     // @ts-ignore
     channel.on('presence', { event: 'join' }, ({ key, newPresences }) => {
         for (let playerStatus of newPresences) {
             players[playerStatus.user] = new Player(playerStatus.name, playerStatus.user);
+            chatNotify("Usuário " + playerStatus.name + " entrou na sala");
         }
     });
     channel.subscribe((status) => {
@@ -327,6 +329,12 @@ function onPlayerMoved(msg) {
         return;
     players[msg.playerID].x = msg.mx;
     players[msg.playerID].y = msg.my;
+}
+function chatNotify(msg) {
+    let p = document.createElement("p");
+    p.innerText = msg;
+    p.className = "room-notification";
+    chatLog.appendChild(p);
 }
 function newChatMessage(msg) {
     if (players[msg.user]) {
