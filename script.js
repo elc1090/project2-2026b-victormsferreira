@@ -17,6 +17,19 @@ let userStatus = {
     user: "",
     name: "",
 };
+// JavaScript's Math.random is not seedable. Need a custom PRNG for the determinism 
+class RNG {
+    constructor(seed) {
+        this.m = 0x80000000; // 2**31;
+        this.a = 1103515245;
+        this.c = 12345;
+        this.state = seed;
+    }
+    next() {
+        this.state = (this.a * this.state + this.c) % this.m;
+        return this.state;
+    }
+}
 class Blockmap {
     constructor(width, height, blockSize) {
         this.map = [];
@@ -48,6 +61,8 @@ class Blockmap {
             this.checkCollisions(i);
     }
     addEntity(e) {
+        if (!e.physical)
+            return;
         const x = Math.floor(e.x / this.blockSize);
         const y = Math.floor(e.y / this.blockSize);
         if (x < 0 || x >= this.width || y < 0 || y >= this.height)
@@ -95,6 +110,7 @@ class Entity {
         this.visible = true;
         this.group = "";
         this.hp = 1;
+        this.physical = true;
         this.x = x;
         this.y = y;
         this.iX = x;
@@ -114,6 +130,11 @@ class Entity {
         const d2 = dx * dx + dy * dy;
         return (d2 < (RADIUS * RADIUS));
     }
+    distance2To(other) {
+        let dx = other.x - this.x;
+        let dy = other.y - this.y;
+        return dx * dx + dy * dy;
+    }
     directionTo(other) {
         let dx = other.x - this.x;
         let dy = other.y - this.y;
@@ -124,6 +145,16 @@ class Entity {
             dy /= d;
         }
         return [dx, dy];
+    }
+    die() {
+    }
+    damage(amt) {
+        this.hp -= amt;
+        if (this.hp < 0) {
+            this.die();
+            return true;
+        }
+        return false;
     }
     onDelete() {
     }
@@ -167,6 +198,8 @@ class Player extends Entity {
         super(4, 8, 8);
         this.chatText = "";
         this.chatTimer = 0;
+        this.kills = 0;
+        this.alive = true;
         this.group = "Players";
         this.name = name;
         this.id = id;
@@ -177,6 +210,7 @@ class Player extends Entity {
         this.nameTag.innerText = name;
         gameCanvasContainer.appendChild(this.nameTag);
         gameCanvasContainer.appendChild(this.chatBubble);
+        this.hp = 10;
         if (id != authUser.id)
             this.interpolated = true;
     }
@@ -184,6 +218,15 @@ class Player extends Entity {
         gameCanvasContainer.removeChild(this.nameTag);
         gameCanvasContainer.removeChild(this.chatBubble);
         delete players[this.id];
+    }
+    die() {
+        this.sprite = 25;
+        this.alive = false;
+    }
+    revive() {
+        this.sprite = 4;
+        this.hp = 10;
+        this.alive = true;
     }
     setPosition(x, y) {
         this.x = x;
@@ -221,12 +264,19 @@ class Player extends Entity {
             playerMoveMessage.data.my = this.y;
             playerMoveMessage.data.playerID = authUser["id"];
             broadcastMessage(playerMoveMessage);
-            if (input.shoot.justPressed) {
-                entities.push(new Bullet(this.id, this.x, this.y, this.dirX, this.dirY));
-                let shootMessage = new Message;
-                shootMessage.type = MessageType.PLAYER_SHOT;
-                shootMessage.data = new PlayerShotData(this.id, this.x, this.y, this.dirX, this.dirY);
-                broadcastMessage(shootMessage);
+            if (this.alive) {
+                if (input.shoot.justPressed) {
+                    entities.push(new Bullet(this.id, this.x, this.y, this.dirX, this.dirY));
+                    let shootMessage = new Message;
+                    shootMessage.type = MessageType.PLAYER_SHOT;
+                    shootMessage.data = new PlayerShotData(this.id, this.x, this.y, this.dirX, this.dirY);
+                    broadcastMessage(shootMessage);
+                }
+            }
+            else {
+                const now = Math.floor(Date.now() / 1000);
+                if (now % 30 == 0)
+                    this.revive();
             }
             cam.moveTo(this.x, this.y);
         }
@@ -246,6 +296,40 @@ class Player extends Entity {
             if (this.chatTimer < 0.0) {
                 this.chatBubble.className = "hidden chat-bubble";
             }
+        }
+    }
+}
+class ZombieSpawner extends Entity {
+    constructor(x, y, time, radius) {
+        super(0, x, y);
+        this.everySeconds = 30;
+        this.radius = 64;
+        this.spawnedThisSecond = false;
+        this.minZombies = 15;
+        this.maxZombies = 50;
+        this.visible = false;
+        this.everySeconds = time;
+        this.radius = radius;
+    }
+    newWave(seed) {
+        const rng = new RNG(seed + this.radius + this.everySeconds);
+        const zombieCount = (rng.next() % (this.maxZombies - this.minZombies)) + this.minZombies;
+        for (let i = 0; i < zombieCount; i++) {
+            const x = this.x + (rng.next() % (this.radius * 2)) - this.radius / 2;
+            const y = this.y + (rng.next() % (this.radius * 2)) - this.radius / 2;
+            entities.push(new Zombie(x, y, 0));
+        }
+    }
+    update() {
+        const now = Math.floor(Date.now() / 1000);
+        if (now % this.everySeconds == 0) {
+            if (!this.spawnedThisSecond) {
+                this.newWave(now);
+                this.spawnedThisSecond = true;
+            }
+        }
+        else {
+            this.spawnedThisSecond = false;
         }
     }
 }
@@ -273,9 +357,8 @@ class Bullet extends Entity {
     onCollideWithEntity(other) {
         console.log("Bullet colliding with " + other.group);
         if (other.group == "Enemies") {
-            other.hp -= 1;
-            if (other.hp <= 0) {
-                other.delete();
+            if (other.damage(1)) {
+                players[this.player].kills++;
             }
             this.delete();
         }
@@ -289,6 +372,9 @@ class Zombie extends Entity {
         this.group = "Enemies";
         this.hp = 3;
     }
+    die() {
+        this.delete();
+    }
     onCollideWithEntity(other) {
         let [dx, dy] = this.directionTo(other);
         switch (other.group) {
@@ -300,6 +386,7 @@ class Zombie extends Entity {
                 this.dirY = dx;
                 this.dirY = dy;
                 this.speed = -4;
+                other.damage(1);
                 break;
             default:
                 break;
@@ -308,7 +395,18 @@ class Zombie extends Entity {
     update() {
         const players = getEntitiesInGroup("Players");
         if (players.length > 0) {
+            let minDist = Infinity;
+            for (let i = 0; i < players.length; i++) {
+                const player = players[i];
+                const d = this.distance2To(player);
+                if (d < minDist) {
+                    minDist = d;
+                    this.target = i;
+                }
+            }
             let target = players[this.target % players.length];
+            if (!target.alive)
+                return;
             let [dX, dY] = this.directionTo(target);
             this.dirX += (dX - this.dirX) * 0.2;
             this.dirY += (dY - this.dirY) * 0.2;
@@ -349,9 +447,6 @@ function drawTilemap(map) {
     }
 }
 function update() {
-    if (Math.floor(Math.random() * 100) == 0) {
-        entities.push(new Zombie(Math.random() * 64, Math.random() * 64, 0));
-    }
     blockmap.clear();
     blockmap.addEntities(entities);
     blockmap.checkAllCollisions();
@@ -362,7 +457,9 @@ function update() {
         input[i].justPressed = false;
     }
 }
+let deathGradient = null;
 function drawLoop() {
+    var _a;
     if (!canvasCtx)
         return;
     canvasCtx.fillStyle = "rgb(0 0 0)";
@@ -374,15 +471,23 @@ function drawLoop() {
     for (const entity of entities) {
         entity.draw();
     }
+    if (!((_a = players[authUser.id]) === null || _a === void 0 ? void 0 : _a.alive)) {
+        canvasCtx.fillStyle = deathGradient;
+        canvasCtx.fillRect(0, 0, 320, 240);
+    }
 }
 async function load() {
     if (canvasCtx) {
         canvasCtx.imageSmoothingEnabled = false;
         tilemap = await loadTilemap();
         blockmap = new Blockmap(tilemap.layers[0].width * 8, tilemap.layers[0].height * 8, 32);
+        deathGradient = canvasCtx.createRadialGradient(160, 120, 40, 160, 120, 100);
+        deathGradient.addColorStop(0, "rgb(200 200 200 / 20%)");
+        deathGradient.addColorStop(0.3, "rgb(80 80 80 / 50%)");
+        deathGradient.addColorStop(1.0, "rgb(0 0 0 / 90%)");
     }
 }
-// INPUT SYSTEM
+// INPUT SYSTEM 
 let actions = {
     ArrowLeft: "left",
     ArrowUp: "up",
@@ -566,6 +671,7 @@ exitChannelButton.addEventListener('click', (e) => {
     for (let player in players) {
         deletePlayer(player);
     }
+    players = {};
     entities = [];
 });
 function onPlayerMoved(msg) {
