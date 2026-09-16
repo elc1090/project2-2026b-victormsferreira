@@ -22,6 +22,63 @@ let userStatus = {
   name: "",
 };
 
+class Blockmap {
+  map: Entity[][] = [];
+  width: number;
+  height: number;
+  blockSize: number = 32;
+  constructor(width: number, height: number, blockSize: number) {
+    this.blockSize = blockSize;
+    this.width = Math.floor(width / this.blockSize);
+    this.height = Math.floor(height / this.blockSize);
+  }
+  clear() {
+    for (let i = 0; i < this.width * this.height; i++) {
+      this.map[i] = [];
+    }
+  }
+  checkCollisions(block: number) {
+    let collisions : [a: Entity, b: Entity][] = [];
+    for (let i = 0; i < this.map[block].length-1; i++) {
+      for (let j = i+1; j < this.map[block].length; j++) {
+        if (this.map[block][i].collidesWith(this.map[block][j])) 
+          collisions.push([this.map[block][i], this.map[block][j]])
+      }
+    }
+    for (let collision of collisions) {
+      collision[0].onCollideWithEntity(collision[1]);
+      collision[1].onCollideWithEntity(collision[0]);
+    }
+  }
+  checkAllCollisions() {
+    for (let i = 0; i < this.width * this.height; i++)
+      this.checkCollisions(i); 
+  }
+  addEntity(e: Entity) {
+    const x = Math.floor(e.x / this.blockSize);
+    const y = Math.floor(e.y / this.blockSize);
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+    this.map[y * this.width + x].push(e);
+  }
+  addEntities(eList: Entity[]) {
+    for (const entity of eList)
+      this.addEntity(entity);
+  }
+  getEntitiesInBlock(block: number) {
+    return this.map[block];
+  }
+  getEntitiesInGridCoords(x: number, y: number) {
+    return this.getEntitiesInBlock(y * this.width + x);
+  }
+  getEntitiesInWorldCoords(x: number, y: number) {
+    x = Math.floor(x / this.blockSize);
+    y = Math.floor(y / this.blockSize);
+    return this.getEntitiesInGridCoords(x, y);
+  }
+}
+
+let blockmap : Blockmap;
+
 class Camera {
   x: number = 0;
   y: number = 0;
@@ -39,13 +96,21 @@ let cam = new Camera();
 class Entity {
   x: number;
   y: number;
+  iX: number;
+  iY: number;
   dirX: number = 1;
   dirY: number = 0;
   speed: number = 0;
   sprite: number;
+  interpolated: boolean = false;
+  visible: boolean = true;
+  group: string = "";
+  hp: number = 1;
   constructor(sprite: number, x: number, y: number) {
     this.x = x;
     this.y = y;
+    this.iX = x;
+    this.iY = y;
     this.sprite = sprite;
   }
   delete() {
@@ -54,11 +119,43 @@ class Entity {
       entities.splice(ind, 1);
     this.onDelete();
   }
+  collidesWith(other: Entity): boolean {
+    const RADIUS = 7.0;
+    const dx: number = (other.x + 4) - (this.x + 4);
+    const dy: number = (other.y + 4) - (this.y + 4);
+    const d2 = dx * dx + dy * dy;
+    return (d2 < (RADIUS * RADIUS));
+  }
+  directionTo(other: Entity): [x: number, y: number] {
+    let dx = other.x - this.x;
+    let dy = other.y - this.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > 1) {
+      const d = Math.sqrt(d2);
+      dx /= d;
+      dy /= d;
+    }
+    return [dx, dy];
+  }
   onDelete() {
   }
   update() {
+    const len2 = this.dirX * this.dirX + this.dirY * this.dirY;
+    if (len2 > 0) {
+      const len = Math.sqrt(len2);
+      this.dirX /= len; 
+      this.dirY /= len; 
+    }
     this.x += this.dirX * this.speed;
     this.y += this.dirY * this.speed;
+    if (this.interpolated) {
+      const LERP_CONSTANT = 0.2;
+      this.iX += (this.x - this.iX) * LERP_CONSTANT;
+      this.iY += (this.y - this.iY) * LERP_CONSTANT;
+    } else {
+      this.iX = this.x;
+      this.iY = this.y;
+    }
     this.checkForMapCollision();
   }
   checkForMapCollision() {
@@ -69,7 +166,7 @@ class Entity {
     }
   }
   draw() {
-    drawSprite(this.sprite, this.x, this.y);
+    drawSprite(this.sprite, this.iX, this.iY);
   }
   onCollideWithEntity(other: Entity) {
 
@@ -95,6 +192,7 @@ class Player extends Entity {
 
   constructor(name : string, id : string) {
     super(4, 8, 8);
+    this.group = "Players";
     this.name = name;
     this.id = id;
     this.nameTag = document.createElement("p");
@@ -104,6 +202,7 @@ class Player extends Entity {
     this.nameTag.innerText = name;
     gameCanvasContainer.appendChild(this.nameTag);
     gameCanvasContainer.appendChild(this.chatBubble);
+    if (id != authUser.id) this.interpolated = true;
   }
   setPosition(x: number, y : number) {
     this.x = x;
@@ -149,12 +248,12 @@ class Player extends Entity {
   }
   draw() {
     super.draw();
-    let [tagX, tagY] = cam.transform(this.x, this.y + 8);
+    let [tagX, tagY] = cam.transform(this.iX, this.iY + 8);
     let bounding = gameCanvas.getBoundingClientRect();
     this.nameTag.style.top = (tagY * 3 + bounding.top).toString();
     this.nameTag.style.left = (tagX * 3 + bounding.left).toString();
     if (this.chatTimer > 0.0) {
-      [tagX, tagY] = cam.transform(this.x+6, this.y - 10);
+      [tagX, tagY] = cam.transform(this.iX+6, this.iY - 10);
       this.chatBubble.style.top = (tagY * 3 + bounding.top).toString();
       this.chatBubble.style.left = (tagX * 3 + bounding.left).toString();
       this.chatTimer -= DT;
@@ -172,6 +271,7 @@ class Bullet extends Entity {
   lifetime: number = 2.0;
   constructor(player: string, x: number, y: number, dx: number, dy: number) {
     super(BULLET_SPRITE, x, y);
+    this.group = "Bullets";
     this.dirX = dx;
     this.dirY = dy;
     this.speed = 2;
@@ -187,10 +287,61 @@ class Bullet extends Entity {
   onCollideWithMap(x: number, y: number, tile: number) {
     this.delete();
   }
+  onCollideWithEntity(other: Entity): void {
+    console.log("Bullet colliding with " + other.group);
+    if (other.group == "Enemies") {
+      other.hp -= 1;
+      if (other.hp <= 0) {
+        other.delete();
+      }
+      this.delete();
+    }
+  }
+}
+
+class Zombie extends Entity {
+  target: number = 0;
+  constructor(x: number, y: number, target: number) {
+    const sprite = 9 + Math.floor(Math.random() * 5);
+    super(sprite, x, y);
+    this.group = "Enemies";
+    this.hp = 3;
+  }
+  onCollideWithEntity(other: Entity): void {
+    let [dx, dy] = this.directionTo(other);
+    switch (other.group) {
+    case "Enemies": 
+      this.dirY -= dx;
+      this.dirY -= dy;
+      break;
+    case "Players": 
+      this.dirY = dx;
+      this.dirY = dy;
+      this.speed = -4;
+      break;
+    default:
+      break;
+    }
+  }
+  update(): void {
+    const players = getEntitiesInGroup("Players");
+    if (players.length > 0) {
+      let target : Entity = players[this.target % players.length];
+      let [dX, dY] = this.directionTo(target);
+      this.dirX += (dX - this.dirX) * 0.2;
+      this.dirY += (dY - this.dirY) * 0.2;
+      this.speed += (0.6 - this.speed) * 0.2;
+    }
+    super.update();
+  }
 }
 
 let entities : Entity[] = [];
 let players : Record<string, Player> = {};
+
+function getEntitiesInGroup(group: string) {
+  return entities.filter((e) => {return e.group == group});
+}
 
 let tilemap : any;
 async function loadTilemap() {
@@ -222,6 +373,12 @@ function drawTilemap(map: any) {
 }
 
 function update() {
+  if (Math.floor(Math.random() * 100) == 0) {
+    entities.push(new Zombie(Math.random() * 64, Math.random() * 64, 0));
+  }
+  blockmap.clear();
+  blockmap.addEntities(entities);
+  blockmap.checkAllCollisions();
   for (const entity of entities) {
     entity.update();
   }
@@ -246,6 +403,7 @@ async function load() {
   if (canvasCtx) {
     canvasCtx.imageSmoothingEnabled = false;
     tilemap = await loadTilemap();
+    blockmap = new Blockmap(tilemap.layers[0].width * 8, tilemap.layers[0].height * 8, 32);
   }
 }
 
@@ -615,6 +773,6 @@ window.addEventListener("unload", (e) => {
 
 async function go() {
   await load();
-  window.setInterval(drawLoop, 1000 / 60);
+  window.setInterval(drawLoop, 1000 * DT);
 }
 go();
