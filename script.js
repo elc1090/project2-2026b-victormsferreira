@@ -21,6 +21,7 @@ class Gamestate {
         this.players = {};
         this.tilemap = {};
         this.valid = false;
+        this.dateNow = 0;
         const worldWidth = tilemap.layers[0].width * 8;
         const worldHeight = tilemap.layers[0].height * 8;
         this.cam = new Camera();
@@ -61,6 +62,7 @@ class Gamestate {
         }
     }
     update() {
+        this.dateNow = Date.now();
         this.blockmap.clear();
         this.blockmap.addEntities(this.entities);
         this.blockmap.checkAllCollisions();
@@ -85,7 +87,7 @@ class Gamestate {
         if (!((_a = this.players[authUser.id]) === null || _a === void 0 ? void 0 : _a.alive)) {
             canvasCtx.fillStyle = deathGradient;
             canvasCtx.fillRect(0, 0, 320, 240);
-            let now = Math.floor(Date.now() / 1000);
+            let now = Math.floor(this.dateNow / 1000);
             let nextRespawn = now;
             nextRespawn = Math.floor(nextRespawn / 30);
             nextRespawn += 1;
@@ -283,7 +285,11 @@ class Entity {
             this.dirY /= len;
         }
         this.x += this.dirX * this.speed;
+        if (this.checkForMapCollision())
+            this.onCollideWithMap(Math.floor((this.x + 4) / 8), Math.floor((this.y + 6) / 8), 1, true);
         this.y += this.dirY * this.speed;
+        if (this.checkForMapCollision())
+            this.onCollideWithMap(Math.floor((this.x + 4) / 8), Math.floor((this.y + 6) / 8), 1, false);
         if (this.interpolated) {
             const LERP_CONSTANT = 0.2;
             this.iX += (this.x - this.iX) * LERP_CONSTANT;
@@ -293,21 +299,40 @@ class Entity {
             this.iX = this.x;
             this.iY = this.y;
         }
-        this.checkForMapCollision();
     }
     checkForMapCollision() {
         let x = this.x + 4;
         let y = this.y + 6;
-        if (x < 0 || y < 0 || x > gameState.tilemap.layers[0].width * 8 || y > gameState.tilemap.layers[0].height * 8) {
-            this.onCollideWithMap(this.x, this.y, -1);
+        const layer = gameState.tilemap.layers[0];
+        if (x < 0 || y < 0 || x > layer.width * 8 || y > layer.height * 8) {
+            return true;
         }
+        let tX = Math.floor(x / 8);
+        let tY = Math.floor(y / 8);
+        let tile = layer.data[tY * layer.width + tX] - 1;
+        const TILE_SOLIDITY = [
+            true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false,
+            true, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false,
+            true, true, false, true, true, true, true, true, false, false, false, false, false, false, false, false,
+            true, true, true, true, true, true, true, true, false, false, false, false, false, false, true, true,
+            true, true, true, true, false, false, true, true, true, true, false, true, true, true, true, true,
+            true, true, true, true, false, false, false, false, false, false, false, true, true, false, true, true,
+            false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true,
+            false, false, false, false, true, true, true, true, true, true, false, true, true, true, true, true,
+            false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true,
+            true, true, false, true, true, false, true, true, false, true, true, true, true, true, true, true,
+        ];
+        if (TILE_SOLIDITY[tile]) {
+            return true;
+        }
+        return false;
     }
     draw() {
         drawSprite(this.sprite, this.iX, this.iY);
     }
     onCollideWithEntity(other) {
     }
-    onCollideWithMap(x, y, tile) {
+    onCollideWithMap(x, y, tile, horizontal) {
     }
 }
 class Player extends Entity {
@@ -417,6 +442,20 @@ class Player extends Entity {
         this.chatTimer = 5.0;
         this.chatBubble.innerText = text;
     }
+    onCollideWithMap(x, y, tile, horizontal) {
+        if (horizontal) {
+            if (this.dirX > 0)
+                this.x = x * 8 - 5;
+            else if (this.dirX < 0)
+                this.x = (x + 1) * 8 - 4;
+        }
+        else {
+            if (this.dirY > 0)
+                this.y = y * 8 - 7;
+            else if (this.dirY < 0)
+                this.y = (y + 1) * 8 - 6;
+        }
+    }
     update() {
         if (this.id == authUser.id) {
             let dx = 0;
@@ -473,7 +512,7 @@ class Player extends Entity {
                     this.nukeCooldown -= DT;
             }
             else {
-                const now = Math.floor(Date.now() / 1000);
+                const now = Math.floor(gameState.dateNow / 1000);
                 if (now % 30 == 0)
                     this.revive();
             }
@@ -533,7 +572,7 @@ class ZombieSpawner extends Entity {
         }
     }
     update() {
-        const now = Math.floor(Date.now() / 1000);
+        const now = Math.floor(gameState.dateNow / 1000);
         if (now % this.everySeconds == 0) {
             if (!this.spawnedThisSecond) {
                 this.newWave(now);
@@ -571,7 +610,7 @@ class Bullet extends Entity {
         }
         super.update();
     }
-    onCollideWithMap(x, y, tile) {
+    onCollideWithMap(x, y, tile, horizontal) {
         this.delete();
     }
     onCollideWithEntity(other) {
@@ -611,6 +650,20 @@ class Zombie extends Entity {
                 break;
         }
     }
+    onCollideWithMap(x, y, tile, horizontal) {
+        if (horizontal) {
+            if (this.dirX > 0)
+                this.x = x * 8 - 5;
+            else if (this.dirX < 0)
+                this.x = (x + 1) * 8 - 4;
+        }
+        else {
+            if (this.dirY > 0)
+                this.y = y * 8 - 7;
+            else if (this.dirY < 0)
+                this.y = (y + 1) * 8 - 6;
+        }
+    }
     update() {
         const players = gameState.getEntitiesInGroup("Players");
         if (players.length > 0) {
@@ -618,18 +671,27 @@ class Zombie extends Entity {
             for (let i = 0; i < players.length; i++) {
                 const player = players[i];
                 const d = this.distance2To(player);
-                if (d < minDist) {
+                if (player.alive && d < minDist) {
                     minDist = d;
                     this.target = i;
                 }
             }
-            let target = players[this.target % players.length];
-            if (!target.alive)
-                return;
-            let [dX, dY] = this.directionTo(target);
-            this.dirX += (dX - this.dirX) * 0.2;
-            this.dirY += (dY - this.dirY) * 0.2;
-            this.speed += (0.6 - this.speed) * 0.2;
+            if (minDist == Infinity) {
+                const dX = Math.cos(gameState.dateNow / 30);
+                const dY = Math.sin(gameState.dateNow / 30);
+                this.dirX += (dX - this.dirX) * 0.2;
+                this.dirY += (dY - this.dirY) * 0.2;
+                this.speed += (0.6 - this.speed) * 0.2;
+            }
+            else {
+                let target = players[this.target % players.length];
+                if (!target.alive)
+                    return;
+                let [dX, dY] = this.directionTo(target);
+                this.dirX += (dX - this.dirX) * 0.2;
+                this.dirY += (dY - this.dirY) * 0.2;
+                this.speed += (0.6 - this.speed) * 0.2;
+            }
         }
         super.update();
     }
