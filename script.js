@@ -10,6 +10,9 @@ const canvasCtx = gameCanvas.getContext("2d");
 const spritesheet = document.getElementById("tileset");
 const messageBox = document.getElementById("message-box");
 const chatLog = document.getElementById("chatlog");
+const killCounter = document.getElementById("kill-counter");
+const deathCounter = document.getElementById("death-counter");
+const respawnTimer = document.getElementById("respawn-timer");
 const DT = 1.0 / 60.0;
 let authUser;
 class Gamestate {
@@ -30,7 +33,32 @@ class Gamestate {
         else {
             this.valid = false;
         }
-        this.entities.push(new ZombieSpawner(64, 64, 30, 64));
+        for (const layer of tilemap.layers) {
+            if (layer.objects) {
+                for (const object of layer.objects) {
+                    if (object.type == "ZombieSpawner") {
+                        console.log(object);
+                        let spawner = new ZombieSpawner(Math.floor(object.x), Math.floor(object.y), 30, 64);
+                        for (const property of object.properties) {
+                            if (property.name == "maxZombies")
+                                spawner.maxZombies = property.value;
+                            if (property.name == "minZombies")
+                                spawner.minZombies = property.value;
+                            if (property.name == "timer")
+                                spawner.everySeconds = property.value;
+                        }
+                        if (object.width)
+                            spawner.radiusX = Math.floor(object.width);
+                        if (object.height)
+                            spawner.radiusY = Math.floor(object.height);
+                        this.entities.push(spawner);
+                    }
+                    if (object.type == "PlayerSpawn") {
+                        this.entities.push(new PlayerSpawn(Math.floor(object.x), Math.floor(object.y)));
+                    }
+                }
+            }
+        }
     }
     update() {
         this.blockmap.clear();
@@ -57,12 +85,21 @@ class Gamestate {
         if (!((_a = this.players[authUser.id]) === null || _a === void 0 ? void 0 : _a.alive)) {
             canvasCtx.fillStyle = deathGradient;
             canvasCtx.fillRect(0, 0, 320, 240);
+            let now = Math.floor(Date.now() / 1000);
+            let nextRespawn = now;
+            nextRespawn = Math.floor(nextRespawn / 30);
+            nextRespawn += 1;
+            nextRespawn *= 30;
+            const respawnLeft = nextRespawn - now;
+            respawnTimer.innerText = "Revivendo em " + respawnLeft + " segundos.";
+        }
+        else {
+            respawnTimer.innerText = "";
         }
     }
     loop() {
         if (!this.valid)
             return;
-        console.log("loop");
         this.update();
         this.draw();
     }
@@ -87,6 +124,7 @@ class RNG {
         return Math.floor(this.next() / (this.m / range)) + min;
     }
 }
+const gRNG = new RNG(1347319847140194);
 class Blockmap {
     constructor(width, height, blockSize) {
         this.map = [];
@@ -187,6 +225,7 @@ class Entity {
         this.group = "";
         this.hp = 1;
         this.physical = true;
+        this.alive = true;
         this.x = x;
         this.y = y;
         this.iX = x;
@@ -223,11 +262,13 @@ class Entity {
         return [dx, dy];
     }
     die() {
+        this.alive = false;
     }
     damage(amt) {
         this.hp -= amt;
         if (this.hp < 0) {
-            this.die();
+            if (this.alive)
+                this.die();
             return true;
         }
         return false;
@@ -275,9 +316,10 @@ class Player extends Entity {
         this.chatText = "";
         this.chatTimer = 0;
         this.kills = 0;
-        this.alive = true;
+        this.deaths = 0;
         this.shootX = 1;
         this.shootY = 0;
+        this.nukeCooldown = 0.0;
         this.group = "Players";
         this.name = name;
         this.id = id;
@@ -295,16 +337,76 @@ class Player extends Entity {
     onDelete() {
         gameCanvasContainer.removeChild(this.nameTag);
         gameCanvasContainer.removeChild(this.chatBubble);
+        this.storeStats();
         delete gameState.players[this.id];
+    }
+    spawn() {
+        if (this.kills > 1000)
+            this.sprite = 6;
+        else if (this.kills > 500)
+            this.sprite = 5;
+        else if (this.kills > 100)
+            this.sprite = 7;
+        else
+            this.sprite = 4;
+        this.hp = 10;
+        this.alive = true;
+        const spawns = gameState.getEntitiesInGroup("PlayerSpawns");
+        if (spawns.length > 0) {
+            const spawn = spawns[gRNG.nextRange(0, spawns.length - 1)];
+            this.x = spawn.x;
+            this.y = spawn.y;
+        }
+    }
+    increaseKills() {
+        this.kills++;
+        if (this.id == authUser.id)
+            this.updateCounts();
     }
     die() {
         this.sprite = 25;
         this.alive = false;
+        this.deaths++;
+        if (this.id == authUser.id)
+            this.updateCounts();
+    }
+    updateCounts() {
+        killCounter.innerText = "Você matou " + this.kills + " inimigos";
+        deathCounter.innerText = "Você morreu " + this.deaths + " vezes";
     }
     revive() {
-        this.sprite = 4;
-        this.hp = 10;
-        this.alive = true;
+        this.spawn();
+    }
+    async loadInStats() {
+        const { data, error } = await supabase.from("PlayerStats").select().eq("user_id", this.id);
+        if (error)
+            return;
+        if (data.length == 0) {
+            this.kills = 0;
+            const { newError } = await supabase.from("PlayerStats").insert({ user_id: this.id });
+            if (newError)
+                console.log(newError);
+        }
+        else {
+            this.kills = data[0].kills;
+            this.deaths = data[0].deaths;
+            this.updateCounts();
+            if (this.kills > 1000)
+                this.sprite = 6;
+            else if (this.kills > 500)
+                this.sprite = 5;
+            else if (this.kills > 100)
+                this.sprite = 7;
+            else
+                this.sprite = 4;
+        }
+    }
+    async storeStats() {
+        if (this.id == authUser.id) {
+            const { error } = await supabase.from("PlayerStats").update({ kills: this.kills, deaths: this.deaths }).eq("user_id", this.id);
+            if (error)
+                console.log(error);
+        }
     }
     setPosition(x, y) {
         this.x = x;
@@ -348,12 +450,27 @@ class Player extends Entity {
             broadcastMessage(playerMoveMessage);
             if (this.alive) {
                 if (input.shoot.justPressed) {
-                    gameState.entities.push(new Bullet(this.id, this.x, this.y, this.shootX, this.shootY));
+                    gameState.entities.push(new Bullet(this.id, this.x, this.y, this.shootX, this.shootY, BulletType.BULLET));
                     let shootMessage = new Message;
                     shootMessage.type = MessageType.PLAYER_SHOT;
-                    shootMessage.data = new PlayerShotData(this.id, this.x, this.y, this.shootX, this.shootY);
+                    shootMessage.data = new PlayerShotData(this.id, this.x, this.y, this.shootX, this.shootY, BulletType.BULLET);
                     broadcastMessage(shootMessage);
                 }
+                if (input.nuke.justPressed && this.nukeCooldown <= 0) {
+                    for (let i = 0; i < 16; i++) {
+                        const angle = i * 3.14159265 / 8;
+                        const dx = Math.cos(angle);
+                        const dy = Math.sin(angle);
+                        gameState.entities.push(new Bullet(this.id, this.x, this.y, dx, dy, BulletType.NUKE));
+                    }
+                    let shootMessage = new Message;
+                    shootMessage.type = MessageType.PLAYER_SHOT;
+                    shootMessage.data = new PlayerShotData(this.id, this.x, this.y, this.shootX, this.shootY, BulletType.NUKE);
+                    broadcastMessage(shootMessage);
+                    this.nukeCooldown = 15;
+                }
+                if (this.nukeCooldown > 0)
+                    this.nukeCooldown -= DT;
             }
             else {
                 const now = Math.floor(Date.now() / 1000);
@@ -383,6 +500,14 @@ class Player extends Entity {
         }
     }
 }
+class PlayerSpawn extends Entity {
+    constructor(x, y) {
+        super(0, x, y);
+        this.group = "PlayerSpawns";
+        this.visible = false;
+        this.physical = false;
+    }
+}
 class ZombieSpawner extends Entity {
     constructor(x, y, time, radius) {
         super(0, x, y);
@@ -392,6 +517,7 @@ class ZombieSpawner extends Entity {
         this.spawnedThisSecond = false;
         this.minZombies = 15;
         this.maxZombies = 30;
+        this.group = "ZombieSpawns";
         this.visible = false;
         this.everySeconds = time;
         this.radiusX = radius;
@@ -420,15 +546,23 @@ class ZombieSpawner extends Entity {
     }
 }
 const BULLET_SPRITE = 8 * 16 + 1;
+const NUKE_SPRITE = 8 * 16 + 8;
+var BulletType;
+(function (BulletType) {
+    BulletType[BulletType["BULLET"] = 0] = "BULLET";
+    BulletType[BulletType["NUKE"] = 1] = "NUKE";
+})(BulletType || (BulletType = {}));
 class Bullet extends Entity {
-    constructor(player, x, y, dx, dy) {
-        super(BULLET_SPRITE, x, y);
+    constructor(player, x, y, dx, dy, type) {
+        const sprites = [NUKE_SPRITE, BULLET_SPRITE];
+        super(sprites[type], x, y);
         this.lifetime = 2.0;
         this.group = "Bullets";
         this.dirX = dx;
         this.dirY = dy;
         this.speed = 2;
         this.player = player;
+        this.type = type;
     }
     update() {
         this.lifetime -= DT;
@@ -443,7 +577,7 @@ class Bullet extends Entity {
     onCollideWithEntity(other) {
         if (other.group == "Enemies") {
             if (other.damage(1)) {
-                gameState.players[this.player].kills++;
+                gameState.players[this.player].increaseKills();
             }
             this.delete();
         }
@@ -451,7 +585,7 @@ class Bullet extends Entity {
 }
 class Zombie extends Entity {
     constructor(x, y, target) {
-        const sprite = 9 + Math.floor(Math.random() * 5);
+        const sprite = 9 + gRNG.nextRange(0, 4);
         super(sprite, x, y);
         this.target = 0;
         this.group = "Enemies";
@@ -546,6 +680,7 @@ let actions = {
     ArrowRight: "right",
     KeyX: "shoot",
     KeyZ: "strafe",
+    KeyC: "nuke"
 };
 class Input {
     constructor() {
@@ -560,6 +695,7 @@ let input = {
     down: new Input(),
     shoot: new Input(),
     strafe: new Input(),
+    nuke: new Input(),
 };
 function onKeyDown(key) {
     if (key.repeat)
@@ -612,12 +748,13 @@ class ZombiesSpawnedData {
     }
 }
 class PlayerShotData {
-    constructor(player, x, y, dx, dy) {
+    constructor(player, x, y, dx, dy, type) {
         this.player = player;
         this.x = x;
         this.y = y;
         this.dx = dx;
         this.dy = dy;
+        this.type = type;
     }
 }
 class Message {
@@ -631,6 +768,8 @@ function spawnPlayer(name, userID) {
     let player = new Player(name, userID);
     gameState.entities.push(player);
     gameState.players[userID] = player;
+    player.loadInStats();
+    player.spawn();
 }
 function deletePlayer(userID) {
     gameState.players[userID].delete();
@@ -658,7 +797,17 @@ async function joinChannel(channelName) {
     });
     channel.on('broadcast', { event: MessageType.PLAYER_SHOT }, (message) => {
         let shot = message.payload;
-        gameState.entities.push(new Bullet(shot.player, shot.x, shot.y, shot.dx, shot.dy));
+        if (shot.type == BulletType.BULLET) {
+            gameState.entities.push(new Bullet(shot.player, shot.x, shot.y, shot.dx, shot.dy, shot.type));
+        }
+        else if (shot.type == BulletType.NUKE) {
+            for (let i = 0; i < 16; i++) {
+                const angle = i * 3.14159265 / 8;
+                const dx = Math.cos(angle);
+                const dy = Math.sin(angle);
+                gameState.entities.push(new Bullet(shot.player, shot.x, shot.y, dx, dy, shot.type));
+            }
+        }
     });
     channel.on('presence', { event: 'sync' }, () => {
         var _a;
