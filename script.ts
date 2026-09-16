@@ -10,22 +10,72 @@ const gameCanvas = <HTMLCanvasElement>document.getElementById("game-canvas");
 const gameCanvasContainer = <HTMLDivElement>document.getElementById("game-canvas-container");
 const canvasCtx = gameCanvas.getContext("2d");
 const spritesheet = <HTMLImageElement>document.getElementById("tileset");
-
 const messageBox = <HTMLInputElement>document.getElementById("message-box");
 const chatLog = <HTMLDivElement>document.getElementById("chatlog");
 const DT = 1.0 / 60.0;
 
-let authUser = supabase.auth.getUser().data;
-let userName : string = "";
-let userStatus = {
-  user: "",
-  name: "",
-};
+let authUser : any;
+
+class Gamestate {
+  cam: Camera;
+  blockmap: Blockmap;
+  entities: Entity[] = [];
+  players: Record<string, Player> = {};
+  tilemap: any = {};
+  valid: boolean = false;
+  constructor(tilemap: any) {
+    const worldWidth = tilemap.layers[0].width * 8;
+    const worldHeight = tilemap.layers[0].height * 8;
+    this.cam = new Camera();
+    this.cam.setBounds(0, 0, worldWidth, worldHeight);
+    this.blockmap = new Blockmap(worldWidth, worldHeight, 32);
+    this.tilemap = tilemap;
+    if (authUser) {
+      this.valid = true;
+    } else {
+      this.valid = false;
+    }
+    this.entities.push(new ZombieSpawner(64, 64, 30, 64));
+  }
+  update() {
+    this.blockmap.clear();
+    this.blockmap.addEntities(this.entities);
+    this.blockmap.checkAllCollisions();
+    for (const entity of this.entities) {
+      entity.update();
+    }
+    for (let i in input) {
+      input[i].justPressed = false;
+    }
+  }
+  draw() {
+    if (!canvasCtx) return;
+    canvasCtx.fillStyle = "rgb(0 0 0)";
+    canvasCtx.fillRect(0, 0, 320, 240);
+    drawTilemap(this.tilemap);
+    for (const entity of this.entities) {
+      if (entity.visible) entity.draw();
+    }
+    if (!(this.players[authUser.id]?.alive)) {
+      canvasCtx.fillStyle = deathGradient;
+      canvasCtx.fillRect(0, 0, 320, 240);
+    }
+  }
+  loop() {
+    if (!this.valid) return;
+    console.log("loop");
+    this.update();
+    this.draw();
+  }
+  getEntitiesInGroup(group: string) {
+    return this.entities.filter((e) => {return e.group == group});
+  }
+}
 
 // JavaScript's Math.random is not seedable. Need a custom PRNG for the determinism 
 class RNG {
   state: number;
-  m: number = 0x80000000; // 2**31;
+  m: number = 2**31;
   a: number = 1103515245;
   c: number = 12345;
 
@@ -36,13 +86,17 @@ class RNG {
     this.state = (this.a * this.state + this.c) % this.m;
     return this.state;
   }
+  nextRange(min: number, max: number) {
+    const range = (max - min) + 1;
+    return Math.floor(this.next() / (this.m / range)) + min;
+  }
 }
 
 class Blockmap {
   map: Entity[][] = [];
   width: number;
   height: number;
-  blockSize: number = 32;
+  blockSize: number;
   constructor(width: number, height: number, blockSize: number) {
     this.blockSize = blockSize;
     this.width = Math.floor(width / this.blockSize);
@@ -94,21 +148,37 @@ class Blockmap {
   }
 }
 
-let blockmap : Blockmap;
 
 class Camera {
   x: number = 0;
   y: number = 0;
   smooth: number = 0.1;
-  transform(posX : number, posY : number) {
+  minX: number = 0;
+  minY: number = 0;
+  maxX: number = 0;
+  maxY: number = 0;
+  bound: boolean = false;
+  setBounds(minX: number, minY: number, maxX: number, maxY: number): void {
+    this.minX = minX;
+    this.minY = minY;
+    this.maxX = maxX;
+    this.maxY = maxY;
+    this.bound = true;
+  }
+  transform(posX : number, posY : number): [x: number, y: number] {
     return [Math.round(posX - this.x + 160), Math.round(posY - this.y + 120)];
   }
-  moveTo(newX : number, newY : number) {
+  moveTo(newX : number, newY : number): void {
     this.x = this.x + (newX - this.x) * this.smooth;
     this.y = this.y + (newY - this.y) * this.smooth;
+    if (this.bound) {
+      if (this.x - 160 < this.minX) this.x = this.minX + 160;
+      if (this.x + 160 > this.maxX) this.x = this.maxX - 160;
+      if (this.y - 120 < this.minY) this.y = this.minY + 120;
+      if (this.y + 120 > this.maxY) this.y = this.maxY - 120;
+    }
   }
 }
-let cam = new Camera();
 
 class Entity {
   x: number;
@@ -132,9 +202,9 @@ class Entity {
     this.sprite = sprite;
   }
   delete() {
-    const ind = entities.indexOf(this);
+    const ind = gameState.entities.indexOf(this);
     if (ind >= 0)
-      entities.splice(ind, 1);
+      gameState.entities.splice(ind, 1);
     this.onDelete();
   }
   collidesWith(other: Entity): boolean {
@@ -195,7 +265,7 @@ class Entity {
   checkForMapCollision() {
     let x = this.x + 4;
     let y = this.y + 6;
-    if (x < 0 || y < 0 || x > tilemap.layers[0].width *8 || y > tilemap.layers[0].height * 8) {
+    if (x < 0 || y < 0 || x > gameState.tilemap.layers[0].width *8 || y > gameState.tilemap.layers[0].height * 8) {
       this.onCollideWithMap(this.x, this.y, -1);
     }
   }
@@ -203,10 +273,8 @@ class Entity {
     drawSprite(this.sprite, this.iX, this.iY);
   }
   onCollideWithEntity(other: Entity) {
-
   } 
   onCollideWithMap(x: number, y: number, tile: number) {
-    
   }
 }
 
@@ -219,10 +287,12 @@ class Player extends Entity {
   chatTimer: number = 0;
   kills: number = 0;
   alive: boolean = true;
+  shootX: number = 1;
+  shootY: number = 0;
   onDelete() {
     gameCanvasContainer.removeChild(this.nameTag);
     gameCanvasContainer.removeChild(this.chatBubble);
-    delete players[this.id];
+    delete gameState.players[this.id];
   }
   die() {
     this.sprite = 25;
@@ -271,6 +341,10 @@ class Player extends Entity {
       if (dx != 0 || dy != 0) {
         this.dirX = dx;
         this.dirY = dy;
+        if (!input.strafe.pressed) {
+          this.shootX = dx;
+          this.shootY = dy;
+        }
         this.speed = 1;
       } else {
         this.speed = 0;
@@ -281,28 +355,30 @@ class Player extends Entity {
       broadcastMessage(playerMoveMessage);
       if (this.alive) {
         if (input.shoot.justPressed) {
-          entities.push(new Bullet(this.id, this.x, this.y, this.dirX, this.dirY));
+          gameState.entities.push(new Bullet(this.id, this.x, this.y, this.shootX, this.shootY));
           let shootMessage = new Message;
           shootMessage.type = MessageType.PLAYER_SHOT;
-          shootMessage.data = new PlayerShotData(this.id, this.x, this.y, this.dirX, this.dirY);
+          shootMessage.data = new PlayerShotData(this.id, this.x, this.y, this.shootX, this.shootY);
           broadcastMessage(shootMessage);
         }
       } else {
         const now = Math.floor(Date.now() / 1000);
         if (now % 30 == 0) this.revive();
       }
-      cam.moveTo(this.x, this.y);
+      gameState.cam.moveTo(this.x, this.y);
     }
     super.update();
   }
   draw() {
+    if (this.id == authUser.id)
+      drawSprite(6*16+1,this.iX + (this.shootX * 4), this.iY + (this.shootY * 4));
     super.draw();
-    let [tagX, tagY] = cam.transform(this.iX, this.iY + 8);
+    let [tagX, tagY] = gameState.cam.transform(this.iX, this.iY + 8);
     let bounding = gameCanvas.getBoundingClientRect();
     this.nameTag.style.top = (tagY * 3 + bounding.top).toString();
     this.nameTag.style.left = (tagX * 3 + bounding.left).toString();
     if (this.chatTimer > 0.0) {
-      [tagX, tagY] = cam.transform(this.iX+6, this.iY - 10);
+      [tagX, tagY] = gameState.cam.transform(this.iX+6, this.iY - 10);
       this.chatBubble.style.top = (tagY * 3 + bounding.top).toString();
       this.chatBubble.style.left = (tagX * 3 + bounding.left).toString();
       this.chatTimer -= DT;
@@ -315,23 +391,25 @@ class Player extends Entity {
 
 class ZombieSpawner extends Entity {
   everySeconds: number = 30;
-  radius: number = 64
+  radiusX: number = 64
+  radiusY: number = 64
   spawnedThisSecond: boolean = false;
   minZombies: number = 15;
-  maxZombies: number = 50;
+  maxZombies: number = 30;
   constructor(x: number, y: number, time: number, radius: number) {
     super(0, x, y);
     this.visible = false;
     this.everySeconds = time;
-    this.radius = radius;
+    this.radiusX = radius;
+    this.radiusY = radius;
   }
   newWave(seed: number) {
-    const rng = new RNG(seed + this.radius + this.everySeconds);
-    const zombieCount = (rng.next() % (this.maxZombies - this.minZombies)) + this.minZombies;
+    const rng = new RNG(seed + this.radiusX + this.radiusY + this.everySeconds);
+    const zombieCount = rng.nextRange(this.minZombies, this.maxZombies);
     for (let i = 0; i < zombieCount; i++) {
-      const x = this.x + (rng.next() % (this.radius * 2)) - this.radius / 2;
-      const y = this.y + (rng.next() % (this.radius * 2)) - this.radius / 2;
-      entities.push(new Zombie(x, y, 0));
+      const x = this.x + rng.nextRange(0, this.radiusX);
+      const y = this.y + rng.nextRange(0, this.radiusY);
+      gameState.entities.push(new Zombie(x, y, 0));
     }
   }
   update(): void {
@@ -371,10 +449,9 @@ class Bullet extends Entity {
     this.delete();
   }
   onCollideWithEntity(other: Entity): void {
-    console.log("Bullet colliding with " + other.group);
     if (other.group == "Enemies") {
       if (other.damage(1)) {
-        players[this.player].kills++;
+        gameState.players[this.player].kills++;
       }
       this.delete();
     }
@@ -387,7 +464,7 @@ class Zombie extends Entity {
     const sprite = 9 + Math.floor(Math.random() * 5);
     super(sprite, x, y);
     this.group = "Enemies";
-    this.hp = 3;
+    this.hp = 2;
   }
   die() {
     this.delete();
@@ -410,7 +487,7 @@ class Zombie extends Entity {
     }
   }
   update(): void {
-    const players = getEntitiesInGroup("Players");
+    const players = gameState.getEntitiesInGroup("Players");
     if (players.length > 0) {
       let minDist = Infinity;
       for (let i = 0; i < players.length; i++) {
@@ -432,14 +509,8 @@ class Zombie extends Entity {
   }
 }
 
-let entities : Entity[] = [];
-let players : Record<string, Player> = {};
+let gameState : Gamestate = new Gamestate({layers: [{width:1, height:1}]});
 
-function getEntitiesInGroup(group: string) {
-  return entities.filter((e) => {return e.group == group});
-}
-
-let tilemap : any;
 async function loadTilemap() {
   let res = await fetch (MAP_URL);
   return await res.json();
@@ -450,7 +521,7 @@ function drawSprite(spriteID: number, x: number, y: number) {
     const SIZE : number = 8;
     const sx : number = SIZE * (spriteID % 16);
     const sy : number = SIZE * Math.floor(spriteID / 16);
-    let [dx, dy] = cam.transform(x, y);
+    let [dx, dy] = gameState.cam.transform(x, y);
     canvasCtx.drawImage(spritesheet, sx, sy, SIZE, SIZE, dx, dy, SIZE, SIZE);
   }
 }
@@ -468,41 +539,14 @@ function drawTilemap(map: any) {
   }
 }
 
-function update() {
-  blockmap.clear();
-  blockmap.addEntities(entities);
-  blockmap.checkAllCollisions();
-  for (const entity of entities) {
-    entity.update();
-  }
-  for (let i in input) {
-    input[i].justPressed = false;
-  }
-}
 let deathGradient : any = null;
-
-function drawLoop() {
-  if (!canvasCtx) return;
-  canvasCtx.fillStyle = "rgb(0 0 0)";
-  canvasCtx.fillRect(0, 0, 320, 240);
-  if (!channel) return;
-  update();
-  drawTilemap(tilemap);
-  for (const entity of entities) {
-    entity.draw();
-  }
-  if (!players[authUser.id]?.alive) {
-    canvasCtx.fillStyle = deathGradient;
-    canvasCtx.fillRect(0, 0, 320, 240);
-  }
-}
 
 
 async function load() {
   if (canvasCtx) {
+    let tilemap = await loadTilemap();
+    gameState = new Gamestate(tilemap);
     canvasCtx.imageSmoothingEnabled = false;
-    tilemap = await loadTilemap();
-    blockmap = new Blockmap(tilemap.layers[0].width * 8, tilemap.layers[0].height * 8, 32);
     deathGradient = canvasCtx.createRadialGradient(160, 120, 40, 160, 120, 100);
     deathGradient.addColorStop(0, "rgb(200 200 200 / 20%)");
     deathGradient.addColorStop(0.3, "rgb(80 80 80 / 50%)");
@@ -519,6 +563,7 @@ let actions : Record<string, string> = {
   ArrowDown: "down",
   ArrowRight: "right",  
   KeyX: "shoot",
+  KeyZ: "strafe",
 }
 
 class Input {
@@ -532,6 +577,7 @@ let input : Record<string, Input> = {
   up: new Input(),
   down: new Input(),
   shoot: new Input(),
+  strafe: new Input(),
 };
 
 function onKeyDown(key: KeyboardEvent) {
@@ -556,7 +602,6 @@ function onKeyUp(key: KeyboardEvent) {
 
 window.addEventListener("keydown", onKeyDown, false);
 window.addEventListener("keyup", onKeyUp, false);
-
 
 // SUPABASE REALTIME STUFF
 
@@ -609,22 +654,22 @@ let channel : any = null;
 
 function spawnPlayer(name: string, userID: string) {
   let player = new Player(name, userID);
-  entities.push(player);
-  players[userID] = player;
+  gameState.entities.push(player);
+  gameState.players[userID] = player;
 }
 
 function deletePlayer(userID: string) {
-  players[userID].delete();
+  gameState.players[userID].delete();
 }
 
-function joinChannel(channelName: string) {
+async function joinChannel(channelName: string) {
+  let tilemap = await loadTilemap();
+  gameState = new Gamestate(tilemap);
+
   if (channel) {
     supabase.removeChannel(channel);
     channel = null;
   }
-
-  userStatus.user = authUser.id,
-  userStatus.name = userName,
 
   channel = supabase.channel("game:rooms:"+channelName, 
     {
@@ -646,7 +691,7 @@ function joinChannel(channelName: string) {
 
   channel.on('broadcast', { event: MessageType.PLAYER_SHOT }, (message : any) => {
     let shot : PlayerShotData = message.payload;
-    entities.push(new Bullet(shot.player, shot.x, shot.y, shot.dx, shot.dy));  
+    gameState.entities.push(new Bullet(shot.player, shot.x, shot.y, shot.dx, shot.dy));  
   });
 
 
@@ -685,6 +730,10 @@ function joinChannel(channelName: string) {
     if (status !== 'SUBSCRIBED') {
       return null
     }
+    let userStatus = {
+      user: authUser.id,
+      name: authUser.user_metadata.display_name
+    };
      channel.track(userStatus);
   });
 
@@ -695,7 +744,7 @@ function joinChannel(channelName: string) {
   if (roomExitMenu) {
     roomExitMenu.getElementsByTagName("p")[0].innerText = channelName;
     roomExitMenu.className = "login-screen";
-    }
+  }
 }
 const joinChannelButton = <HTMLButtonElement>document.getElementById("join-channel-button");
 const exitChannelButton = <HTMLButtonElement>document.getElementById("exit-channel-button");
@@ -705,6 +754,7 @@ joinChannelButton.addEventListener('click', (e) => {
     joinChannel(channelName);
   }
 });
+
 exitChannelButton.addEventListener('click', (e) => {
   if (channel)
     supabase.removeChannel(channel);
@@ -715,17 +765,18 @@ exitChannelButton.addEventListener('click', (e) => {
     roomJoinMenu.className = "login-screen";
   if (roomExitMenu)
     roomExitMenu.className = "hidden";
-  for (let player in players) {
+  for (let player in gameState.players) {
     deletePlayer(player);
   }
-  players = {};
-  entities = [];
+  gameState.players = {};
+  gameState.entities = [];
+  gameState.valid = false;
 });
 
 function onPlayerMoved(msg: PlayerMovedData) {
   if (!msg.playerID) return;
-  players[msg.playerID].x = msg.mx;
-  players[msg.playerID].y = msg.my;
+  gameState.players[msg.playerID].x = msg.mx;
+  gameState.players[msg.playerID].y = msg.my;
 }
 
 function chatNotify(msg: string) {
@@ -736,13 +787,11 @@ function chatNotify(msg: string) {
 }
 
 function newChatMessage(msg: ChatMessageData) {
-  if (players[msg.user]) {
+  if (gameState.players[msg.user]) {
     let p = document.createElement("p");
-    p.innerText = players[msg.user].name + ": " + msg.text;
+    p.innerText = gameState.players[msg.user].name + ": " + msg.text;
     chatLog.appendChild(p);
-    console.log(msg);
-
-    players[msg.user].setChatText(msg.text);
+    gameState.players[msg.user].setChatText(msg.text);
   }
 }
 
@@ -799,7 +848,7 @@ const { data, error } = await supabase.auth.getUser()
   authContainers[1].className = "hidden";
   authContainers[2].className = "hidden";
   authContainers[3].className = "login-screen";
-  userName = data.user.user_metadata.display_name;
+  const userName = data.user.user_metadata.display_name;
   authContainers[3].getElementsByTagName("p")[0].innerText = "Logged in as " + userName;
   authUser = data.user;
 }
@@ -815,7 +864,6 @@ async function signUp(email: string, password: string, username: string) {
   });
   if (error) {
     alert("Tentativa de registro inválida");
-    console.log(error)
   } else {
     loggedIn();
   }
@@ -877,6 +925,6 @@ window.addEventListener("unload", (e) => {
 
 async function go() {
   await load();
-  window.setInterval(drawLoop, 1000 * DT);
+  window.setInterval(() => {gameState.loop()}, 1000 * DT);
 }
 go();
