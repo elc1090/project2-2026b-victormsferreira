@@ -382,6 +382,12 @@ class Player extends Entity {
             this.x = spawn.x;
             this.y = spawn.y;
         }
+        if (this.id == authUser.id) {
+            let msg = new Message;
+            msg.type = MessageType.PLAYER_SPAWNED;
+            msg.data = this.id;
+            broadcastMessage(msg);
+        }
     }
     increaseKills() {
         this.kills++;
@@ -392,8 +398,13 @@ class Player extends Entity {
         this.sprite = 25;
         this.alive = false;
         this.deaths++;
-        if (this.id == authUser.id)
+        if (this.id == authUser.id) {
             this.updateCounts();
+            let msg = new Message;
+            msg.type = MessageType.PLAYER_DIED;
+            msg.data = this.id;
+            broadcastMessage(msg);
+        }
     }
     updateCounts() {
         killCounter.innerText = "Você matou " + this.kills + " inimigos";
@@ -786,7 +797,8 @@ var MessageType;
     MessageType["CHAT_MESSAGE"] = "ChatMessage";
     MessageType["PLAYER_MOVED"] = "PlayerMoved";
     MessageType["PLAYER_SHOT"] = "PlayerShot";
-    MessageType["ZOMBIES_SPAWN"] = "ZombiesSpawned";
+    MessageType["PLAYER_DIED"] = "PlayerDied";
+    MessageType["PLAYER_SPAWNED"] = "PlayerSpawned";
 })(MessageType || (MessageType = {}));
 class ChatMessageData {
     constructor() {
@@ -870,6 +882,14 @@ async function joinChannel(channelName) {
                 gameState.entities.push(new Bullet(shot.player, shot.x, shot.y, dx, dy, shot.type));
             }
         }
+    });
+    channel.on('broadcast', { event: MessageType.PLAYER_DIED }, (message) => {
+        var _a;
+        (_a = gameState.players[message.payload]) === null || _a === void 0 ? void 0 : _a.die();
+    });
+    channel.on('broadcast', { event: MessageType.PLAYER_SPAWNED }, (message) => {
+        var _a;
+        (_a = gameState.players[message.payload]) === null || _a === void 0 ? void 0 : _a.spawn();
     });
     channel.on('presence', { event: 'sync' }, () => {
         var _a;
