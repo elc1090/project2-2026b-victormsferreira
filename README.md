@@ -175,21 +175,18 @@ Código que cria os inimigos, buscando manter determinismo para que todos os jog
 
 ### Linguagens e afins
 
-Substitua este trecho por uma lista detalhada de tecnologias utilizadas:
 - TypeScript
 - Supabase
 - HTML/CSS
 
 ### Ambiente de desenvolvimento
 
-Substitua este trecho por uma lista detalhada dos ambientes/ferramentas de desenvolvimento que você usou (por exemplo, VS Code + alguma extensão, agentes de IA, etc.)
 - VSCode
 - Python para hospedagem local
 - Tiled para criação do mapa
 
 ## Referências e créditos
 
-Substitua este trecho por uma lista bem detalhada de todo material que você consultou para ajudar no projeto, por exemplo:  URLs de vídeos ou outro material consultado, créditos para colegas que colaboraram, geradores de código, etc.
 - https://developer.mozilla.org/en-US/docs/Web/
 - https://www.typescriptlang.org/docs/handbook/
 - https://supabase.com/docs
