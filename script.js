@@ -15,6 +15,7 @@ const deathCounter = document.getElementById("death-counter");
 const respawnTimer = document.getElementById("respawn-timer");
 const DT = 1.0 / 60.0;
 let authUser;
+let sendLocation = 0;
 class Gamestate {
     constructor(tilemap) {
         this.entities = [];
@@ -316,9 +317,9 @@ class Entity {
             true, true, false, true, true, true, true, true, false, false, false, false, false, false, false, false,
             true, true, true, true, true, true, true, true, false, false, false, false, false, false, true, true,
             true, true, true, true, false, false, true, true, true, true, false, true, true, true, true, true,
-            true, true, true, true, false, false, false, false, false, false, false, true, true, false, true, true,
+            true, true, true, true, true, true, true, false, false, false, false, true, true, false, true, true,
             false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true,
-            false, false, false, false, true, true, true, true, true, true, false, true, true, true, true, true,
+            false, false, false, false, true, true, true, true, false, false, false, true, true, true, true, true,
             false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true,
             true, true, false, true, true, false, true, true, false, true, true, true, true, true, true, true,
         ];
@@ -497,7 +498,11 @@ class Player extends Entity {
             playerMoveMessage.data.mx = this.x;
             playerMoveMessage.data.my = this.y;
             playerMoveMessage.data.playerID = authUser["id"];
-            broadcastMessage(playerMoveMessage);
+            sendLocation++;
+            if (sendLocation == 3) {
+                broadcastMessage(playerMoveMessage);
+                sendLocation = 0;
+            }
             if (this.alive) {
                 if (input.shoot.justPressed) {
                     gameState.entities.push(new Bullet(this.id, this.x, this.y, this.shootX, this.shootY, BulletType.BULLET));
