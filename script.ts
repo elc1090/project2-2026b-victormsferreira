@@ -19,6 +19,8 @@ const DT = 1.0 / 60.0;
 
 let authUser : any;
 
+let sendLocation: number = 0;
+
 class Gamestate {
   cam: Camera;
   blockmap: Blockmap;
@@ -492,7 +494,11 @@ class Player extends Entity {
       playerMoveMessage.data.mx = this.x;
       playerMoveMessage.data.my = this.y;
       playerMoveMessage.data.playerID = authUser["id"];
-      broadcastMessage(playerMoveMessage);
+      sendLocation++;
+      if (sendLocation == 3) {
+        broadcastMessage(playerMoveMessage);
+        sendLocation = 0;
+      }
       if (this.alive) {
         if (input.shoot.justPressed) {
           gameState.entities.push(new Bullet(this.id, this.x, this.y, this.shootX, this.shootY, BulletType.BULLET));
